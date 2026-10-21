@@ -1,0 +1,42 @@
+SIRASANAMBETISIDDHARDHREDDY
+♂¶ap-¶arker-altTirupati✉siddhu4356@gmail.com♂phone+91 8019361891/githubsiddhardh4356
+Summary
+Computer Science student at Amrita Vishwa Vidyapeetham, Coimbatore, with a strong interest in front-end development
+and web technologies. Experienced in building responsive applications and contributing to academic projects. Passionate
+about generative design, creative problem-solving, and applying technology to develop practical, user-focused solutions.
+Continuously learning and expanding skills in modern development tools and frameworks.
+Education
+Amrita Vishwa VidyapeethamCoimbatore, India
+B.T ech in Computer Science Engineering — CGPA: 6.98 2022 – 2026
+Sri Chaitanya CollegeVijayawada, India
+Class XII — Score: 84.7% 2020 – 2022
+Dr . KKR’s Gowtham SchoolGudivada, India
+Class X — Score: 100% 2019 – 2020
+Projects
+Intelligent Risk-Aware Routing for Critical Health Data Prioritization|Contiki OS, Cooja, Embedded C2026
+• Implemented a risk-aware routing system for healthcare IoT networks using Cooja simulator.
+• Used logistic regression to classify data into priority levels based on patient risk.
+• Developed congestion-aware routing using Dynamic Parent Score (DPS).
+• Improved delay and packet delivery for critical data transmission.
+Amrita Volunteer Network|Next.js, Supabase, T ailwind CSS2025
+• Developed a web platform for a charitable trust that allows volunteers to view upcoming events and register based
+on their availability .
+• Implemented volunteer registration, event listings, and participation tracking using a Supabase database.
+• Built responsive user interfaces with Next.js and Tailwind CSS to provide a smooth and user-friendly experience.
+SlipWise|Next.js, TypeScript, MongoDB, T ailwind CSS2025
+• Developed a full-stack expense sharing application that enables users to track, split, and manage group expenses.
+• Implemented secure user authentication and group expense management.
+• Built automated expense splitting and real-time balance tracking dashboards.
+Smart Bin Management System|ESP32, Arduino IDE, Firebase2025
+• Developed an IoT-based waste monitoring system using ESP32 and ultrasonic sensors to detect bin fill levels.
+• Implemented Wi-Fi based alerts and real-time monitoring for efficient waste management.
+• Integrated odor detection and voice alert system to notify users when the bin is full.
+Areas of Interest
+Web Development — Data-Driven Applications — IoT Systems — Machine Learning
+T echnical Skills
+Languages: Python, 
+
+[IMPROVED REVISION - TARGET ROLE: Full Stack Engineer (React + FastAPI)]
+Key Enhancements Applied:
+- Grouped core technical skills
+- Expanded project responsibilities with verified evidence.

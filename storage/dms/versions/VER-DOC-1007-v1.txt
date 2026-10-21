@@ -1,0 +1,25 @@
+BIJU DANIEL T
+VEEVA VAULT CONFIGURATION & SDK DEVELOPER
+CTMS  |  QMS  |  QualityDocs (QDocs)  |  Vault SDK  |  Custom Pages  |  Integrations
+biju.t@rudhrainfosolutions.com   |   +91 6382483733
+PROFESSIONAL SUMMARY
+Veeva Vault Configuration & SDK Developer with 2+ years of combined professional and internship experience across Vault Clinical and Quality applications, particularly CTMS, QMS, and QualityDocs (QDocs), with eTMF exposure. Hands-on experience with Vault Java SDK Job Processors, job metadata and scheduling, VPK inbound deployments, and custom pages connecting Java SDK controllers with React/JavaScript client code.
+Built Vault-based external API callouts using Java SDK HttpService, JsonService, and PageController integrations, alongside REST API and backend development in Java, Spring Boot, Python, and SQL. Complementary strengths include Vault configuration, object/document migrations, validation, reconciliation, AWS services, and Jenkins CI/CD. Familiar with Veeva CRM and Salesforce CRM technologies.
+CORE TECHNICAL & FUNCTIONAL SKILLS
+Veeva Vault Domains:  CTMS, QMS, QualityDocs (QDocs), eTMF; Vault Clinical and Quality applications.
+Vault Configuration:  Vault objects/fields, picklists, document types and metadata, relationships, reference data, lifecycles, workflows, Pages and Tabs.
+Vault Java SDK:  Job Processors, SDK Job Metadata, Job Definitions, scheduled jobs; PageController, onLoad/onEvent, @PageControllerInfo, @ExecuteAs, HttpService and JsonService.
+Custom Pages & UI:  React, JavaScript/JSX, @veeva/vault, esbuild, client code distributions, distribution manifests, Page/Tab MDL configurations.
+Deployment & Integrations:  VPK inbound packages, vaultpackage.xml, package validation, Maven, Jenkins CI/CD, Git, REST APIs, HTTP callouts, Vault connections, Java and Spring Boot.
+Data Engineering & Cloud:  Python, FastAPI, SQL, PostgreSQL, H2, Amazon Redshift, AWS S3, AWS Glue, EC2, Pandas, PySpark; ETL, data processing and batch validation.
+Migration & CRM:  Object/document/metadata migration, source-to-target mapping, transformation, cleansing, reconciliation; Veeva CRM and Salesforce CRM familiarity.
+PROFESSIONAL EXPERIENCE
+Rudhra Info Solutions	Mar 2025 – Present
+Associate Software Engineer – Migration Analyst / Veeva Vault SME
+•  Supported Veeva Vault Clinical and Quality solutions in CTMS, QMS, QualityDocs, and eTMF, spanning configuration, SDK-related activities, integrations, and migration support.
+•  Worked with Vault configuration ele
+
+[IMPROVED REVISION - TARGET ROLE: # Job Description: Full Stack Developer (Fresher)]
+Key Enhancements Applied:
+- Grouped core technical skills
+- Expanded project responsibilities with verified evidence.

@@ -1,0 +1,8 @@
+.env
+**/.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+HR2/HR/.env
+HR2/.env

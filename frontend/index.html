@@ -1,0 +1,1093 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HR Console </title>
+  <meta name="description"
+    content="Enterprise AI recruitment management system for talent acquisition teams. Screen candidates, optimize resumes, and manage hiring workflows.">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234f46e5' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'></path><circle cx='9' cy='7' r='4'></circle><path d='M22 21v-2a4 4 0 0 0-3-3.87'></path><path d='M16 3.13a4 4 0 0 1 0 7.75'></path></svg>">
+  <link rel="stylesheet" href="/static/css/main.css">
+</head>
+
+<body>
+
+  <!-- Global Header -->
+  <header class="app-header">
+    <div class="brand-section">
+      <div class="brand-logo-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"
+          stroke-linejoin="round">
+          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+          <circle cx="9" cy="7" r="4"></circle>
+          <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+          <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <h1>HR Console</h1>
+        <p>Recruitment & Talent Intelligence</p>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <!-- System Connectivity Status -->
+      <div class="system-status-indicator" id="header-ikm-badge" onclick="openIKMModal()"
+        title="View System Status & AI Intelligence Services">
+        <span class="status-dot" id="header-ikm-dot"></span>
+        <span id="header-ikm-text">Systems Operational</span>
+      </div>
+
+      <!-- Theme Switcher -->
+      <button type="button" class="theme-toggle-btn" id="theme-toggle-btn" onclick="toggleTheme()"
+        aria-label="Toggle light or dark theme" title="Toggle theme">
+        <svg id="theme-icon-sun" style="display:none;" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="5"></circle>
+          <line x1="12" y1="1" x2="12" y2="3"></line>
+          <line x1="12" y1="21" x2="12" y2="23"></line>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+          <line x1="1" y1="12" x2="3" y2="12"></line>
+          <line x1="21" y1="12" x2="23" y2="12"></line>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+        </svg>
+        <svg id="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+        </svg>
+      </button>
+
+      <!-- Account Controls -->
+      <div class="user-profile-pill">
+        <span class="user-profile-avatar">HR</span>
+        <span>Administrator</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Navigation Tabs Bar -->
+  <nav class="nav-tabs-bar" aria-label="Main Navigation">
+    <button class="nav-tab-btn active" data-tab="dashboard" onclick="switchTab('dashboard')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="7" height="9"></rect>
+        <rect x="14" y="3" width="7" height="5"></rect>
+        <rect x="14" y="12" width="7" height="9"></rect>
+        <rect x="3" y="16" width="7" height="5"></rect>
+      </svg>
+      Dashboard
+    </button>
+    <button class="nav-tab-btn" data-tab="matching" onclick="switchTab('matching')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      Find Candidates
+    </button>
+    <button class="nav-tab-btn" data-tab="improvement" onclick="switchTab('improvement')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+      </svg>
+      Improve Resume
+    </button>
+    <button class="nav-tab-btn" data-tab="followups" onclick="switchTab('followups')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"></circle>
+        <polyline points="12 6 12 12 16 14"></polyline>
+      </svg>
+      Follow-Ups <span class="tab-badge" id="badge-followups-count">0</span>
+    </button>
+    <button class="nav-tab-btn" data-tab="library" onclick="switchTab('library')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+      </svg>
+      Resume Library <span class="tab-badge" id="badge-library-count">0</span>
+    </button>
+    <button class="nav-tab-btn" data-tab="notifications" onclick="switchTab('notifications')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+        <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+      </svg>
+      Notifications <span class="tab-badge" id="badge-notifications-count">0</span>
+    </button>
+  </nav>
+
+  <!-- Main Container -->
+  <main class="app-container">
+
+    <!-- TAB 1: DASHBOARD -->
+    <section class="tab-pane active" id="tab-dashboard">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Dashboard</h2>
+          <p class="section-subtitle">Real-time candidate pipeline overview, review queue, and talent intelligence</p>
+        </div>
+      </div>
+
+      <!-- Metric Cards Grid -->
+      <div class="grid-4" style="margin-bottom: 1.75rem;">
+        <div class="metric-card">
+          <div class="metric-icon-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+              <polyline points="10 9 9 9 8 9"></polyline>
+            </svg>
+          </div>
+          <div class="metric-data">
+            <div class="metric-value" id="stat-total-resumes">0</div>
+            <div class="metric-label">Total Resume</div>
+          </div>
+        </div>
+
+        <div class="metric-card warning" style="cursor: pointer;" onclick="goToPendingFollowups()"
+          title="View and review pending candidates in Follow-ups">
+          <div class="metric-icon-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+          </div>
+          <div class="metric-data">
+            <div class="metric-value" id="stat-awaiting-review">0</div>
+            <div class="metric-label">Awaiting Initial Review &rarr;</div>
+          </div>
+        </div>
+
+        <div class="metric-card danger">
+          <div class="metric-icon-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+              <line x1="12" y1="9" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+          </div>
+          <div class="metric-data">
+            <div class="metric-value" id="stat-followups-due">0</div>
+            <div class="metric-label">Follow-ups Due & Overdue</div>
+          </div>
+        </div>
+
+        <div class="metric-card success" style="cursor: pointer;" onclick="openManageJobsModal()"
+          title="Manage active job openings">
+          <div class="metric-icon-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+              <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+            </svg>
+          </div>
+          <div class="metric-data">
+            <div class="metric-value" id="stat-active-jobs">0</div>
+            <div class="metric-label">Active Job Openings &rarr;</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: FIND CANDIDATES -->
+    <section class="tab-pane" id="tab-matching">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Find Candidates</h2>
+          <p class="section-subtitle">Screen and rank candidates against job requirements with evidence verification</p>
+        </div>
+      </div>
+
+      <div class="grid-2" style="margin-bottom: 2rem;">
+        <!-- Left: Upload & Shortlist Input -->
+        <div class="card">
+          <h3 style="font-family: var(--font-heading); font-size: 1.05rem; margin-bottom: 0.4rem;">1. Resume Upload &
+            Search Scope</h3>
+          <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1rem;">
+            Add candidate resumes or evaluate against candidates in the repository.
+          </p>
+
+          <div class="dropzone" id="match-dropzone">
+            <div class="dropzone-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+            </div>
+            <div class="dropzone-text">Click or drop resume files here to upload</div>
+            <div class="dropzone-subtext">Supported formats: PDF, DOCX, TXT (up to 15MB)</div>
+            <input type="file" id="match-file-input" multiple accept=".pdf,.docx,.doc,.txt" style="display:none;">
+          </div>
+
+          <div
+            style="display:flex; justify-content:space-between; align-items:center; margin-top:1rem; margin-bottom:0.4rem;">
+            <div
+              style="font-weight:600; font-size:0.84rem; color:var(--text-main); display:flex; align-items:center; gap:0.5rem;">
+              <span>Uploaded Resumes</span>
+              <span id="match-uploaded-count-pill" class="badge-ready file-status-badge" style="display:none;">0
+                Files</span>
+            </div>
+            <button type="button" id="btn-clear-all-uploads" class="btn btn-secondary btn-sm"
+              onclick="clearAllUploadedResumes()" style="display:none;">
+              Clear All
+            </button>
+          </div>
+
+          <div class="upload-files-list" id="match-upload-progress"></div>
+
+          <!-- Expandable Select from Existing Button -->
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-toggle-match-existing" onclick="toggleExpandExistingMatch()"
+            style="width: 100%; display: flex; justify-content: space-between; align-items: center; margin-top: 0.65rem; margin-bottom: 0.5rem; padding: 0.45rem 0.85rem;">
+            <span>📁 Select from Existing (<strong id="match-selected-count-badge">0</strong> selected)</span>
+            <span id="match-expand-chevron">▼</span>
+          </button>
+
+          <!-- Existing Resumes Selection Box (Collapsed initially) -->
+          <div class="existing-resumes-container" id="match-existing-container" style="display:none; margin-bottom:0.75rem;">
+            <div class="existing-resumes-header">
+              <span style="font-size:0.75rem; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.04em;">
+                Select Existing Resumes (<span id="match-selected-count">0</span> selected)
+              </span>
+              <label style="display:inline-flex; align-items:center; gap:0.35rem; font-size:0.8rem; cursor:pointer; color:var(--text-muted);">
+                <input type="checkbox" id="match-select-all-existing" onchange="toggleSelectAllMatchExisting(this.checked)">
+                Select All
+              </label>
+            </div>
+            <div class="existing-resumes-search">
+              <input type="text" id="match-existing-search" class="form-control" style="font-size:0.8rem; padding:0.35rem 0.65rem;"
+                placeholder="Search candidate name or document ID..." oninput="filterMatchExistingResumes()">
+            </div>
+            <div class="existing-resumes-list" id="match-existing-list">
+              <!-- Loaded dynamically with checkboxes -->
+            </div>
+          </div>
+
+          <hr style="border: none; border-top: 1px solid var(--border-subtle); margin: 1.25rem 0;">
+
+          <!-- Shortlist Count Section -->
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label" for="match-top-n-input">2. Shortlist Candidate Count</label>
+            <div class="top-n-input-wrapper">
+              <input type="number" id="match-top-n-input" class="top-n-input" min="1" max="100" value="5"
+                placeholder="5">
+              <div class="top-n-hint">
+                Select between 1 and 100 top matching candidates to return.
+              </div>
+            </div>
+            <div id="match-validation-error" class="form-error-inline"></div>
+          </div>
+        </div>
+
+        <!-- Right: Job Description -->
+        <div class="card">
+          <h3 style="font-family: var(--font-heading); font-size: 1.05rem; margin-bottom: 0.4rem;">3. Job Description
+          </h3>
+          <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1rem;">
+            Select a saved requisition or paste job requirements.
+          </p>
+
+          <div class="form-group">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.35rem;">
+              <label class="form-label" for="match-job-select" style="margin-bottom:0;">Saved Job Opening</label>
+              <div style="display:flex; gap:0.4rem;">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="openManageJobsModal()"
+                  title="Add or manage saved job openings">+ Manage Jobs</button>
+                <button type="button" id="btn-delete-selected-job" class="btn btn-danger btn-sm"
+                  onclick="deleteCurrentlySelectedJob()" style="display:none;">Delete</button>
+              </div>
+            </div>
+            <select id="match-job-select" class="form-control">
+              <option value="">-- Select Saved Job Description --</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="match-jd-textarea">Requirements & Qualifications</label>
+            <textarea id="match-jd-textarea" class="form-control" style="min-height: 125px;"
+              placeholder="Paste job description, required skills, and qualifications here...">Python backend developer with FastAPI, PostgreSQL, REST API development, and relevant project experience.</textarea>
+          </div>
+
+          <button id="btn-run-match" class="btn btn-primary" style="width:100%;" onclick="runCandidateMatching()">
+            Show Results
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Loading Indicator -->
+      <div id="match-loading-indicator" class="match-loading-box" style="display:none;">
+        <div class="spinner"></div>
+        <div style="font-size:0.92rem; font-weight:600; color:var(--text-main);">Screening & Ranking Candidates...</div>
+        <div style="font-size:0.8rem; color:var(--text-muted);">Evaluating candidate profiles against job requirements</div>
+      </div>
+
+      <!-- Match Results Section -->
+      <div id="match-results-container"></div>
+    </section>
+
+    <!-- TAB 3: IMPROVE RESUME -->
+    <section class="tab-pane" id="tab-improvement">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Improve Resume</h2>
+          <p class="section-subtitle">Evidence-grounded gap analysis, suggested enhancements, and version management</p>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom: 1.75rem;">
+        <div class="grid-2">
+          <!-- Left: Existing Resume Search & Selection + Multi Upload -->
+          <div class="form-group">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.35rem;">
+              <label class="form-label" style="margin-bottom:0;">Candidate Resumes</label>
+              <button type="button" class="btn btn-secondary btn-sm"
+                onclick="document.getElementById('improve-resume-file-input').click()">
+                Upload New Files
+              </button>
+            </div>
+
+            <!-- Multi Upload Dropzone -->
+            <div class="dropzone" id="improve-dropzone"
+              style="padding: 0.75rem 1rem; border-style: dashed; border-width: 1px; cursor: pointer;">
+              <div style="display:flex; align-items:center; justify-content:center; gap:0.5rem; font-size:0.82rem; color:var(--text-muted);">
+                <span>Drop or click to upload resume files (DOCX, PDF, TXT)</span>
+              </div>
+              <input type="file" id="improve-resume-file-input" multiple accept=".docx,.pdf,.doc,.txt" style="display:none;">
+            </div>
+
+            <!-- Uploaded Files List with Preview and Remove -->
+            <div class="upload-files-list" id="improve-uploaded-list" style="margin-top:0.6rem;"></div>
+
+            <!-- Expandable Select from Existing Button -->
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-toggle-improve-existing" onclick="toggleExpandExistingImprove()"
+              style="width: 100%; display: flex; justify-content: space-between; align-items: center; margin-top: 0.65rem; margin-bottom: 0.5rem; padding: 0.45rem 0.85rem;">
+              <span>📁 Select from Existing (<strong id="improve-selected-count-badge">0</strong> selected)</span>
+              <span id="improve-expand-chevron">▼</span>
+            </button>
+
+            <!-- Existing Resumes Selection Box (Collapsed initially) -->
+            <div class="existing-resumes-container" id="improve-existing-container" style="display:none; margin-top:0.5rem;">
+              <div class="existing-resumes-header">
+                <span style="font-size:0.75rem; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.04em;">
+                  Select Stored Resume (<span id="improve-selected-name">None Selected</span>)
+                </span>
+                <label style="display:inline-flex; align-items:center; gap:0.35rem; font-size:0.8rem; cursor:pointer; color:var(--text-muted);">
+                  <input type="checkbox" id="improve-select-all-existing" onchange="toggleSelectAllImproveExisting(this.checked)">
+                  Select All
+                </label>
+              </div>
+              <div class="existing-resumes-search">
+                <input type="text" id="improve-existing-search" class="form-control" style="font-size:0.8rem; padding:0.35rem 0.65rem;"
+                  placeholder="Search existing candidate name or document ID..." oninput="filterImproveExistingResumes()">
+              </div>
+              <div class="existing-resumes-list" id="improve-existing-list">
+                <!-- Loaded dynamically -->
+              </div>
+            </div>
+            <select id="improve-resume-select" class="form-control" style="display:none;" onchange="onImproveResumeSelected()"></select>
+          </div>
+
+          <!-- Right: Job Description Layout matching Find Candidates -->
+          <div class="card" style="margin-bottom:0; background:var(--bg-surface-subtle); display:flex; flex-direction:column; justify-content:space-between;">
+            <div>
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
+                <h3 style="font-family: var(--font-heading); font-size: 1.05rem; margin-bottom: 0;">2. Job Description</h3>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="openManageJobsModal()"
+                  title="Add or manage saved job openings">+ Manage Jobs</button>
+              </div>
+              <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+                Select target opening or paste custom requirements.
+              </p>
+
+              <div class="form-group" style="margin-bottom:0.85rem;">
+                <label class="form-label" for="improve-job-select" style="margin-bottom:0.35rem;">Target Job Opening</label>
+                <select id="improve-job-select" class="form-control" onchange="onImproveJobSelected()">
+                  <option value="">-- Select Target Job Description --</option>
+                </select>
+              </div>
+
+              <!-- Custom JD Box placed directly below Job Opening Box on the right, matching Find Candidates -->
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label" for="improve-custom-jd" style="margin-bottom:0.35rem;">Custom Job Requirements Benchmark (Optional)</label>
+                <textarea id="improve-custom-jd" class="form-control" style="min-height: 110px;"
+                  placeholder="Optional: Provide custom JD text to benchmark candidate against..."></textarea>
+              </div>
+            </div>
+
+            <!-- Start Operation Button below JD section -->
+            <div style="margin-top:1rem;">
+              <button id="btn-start-improvement" class="btn btn-primary" style="width:100%; padding:0.6rem 1rem; font-size:0.95rem; font-weight:700;" onclick="runResumeImprovementAnalysis()">
+                Start Resume Improvement
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Loading Indicator for Improvement -->
+        <div id="improve-loading-indicator" class="match-loading-box" style="display:none; margin-top:1rem;">
+          <div class="spinner"></div>
+          <div style="font-size:0.92rem; font-weight:600; color:var(--text-main);">Analyzing Resume Gaps & Aligning Requirements...</div>
+          <div style="font-size:0.8rem; color:var(--text-muted);">Benchmarking candidate experience against target role without modifying original file</div>
+        </div>
+
+        <!-- Candidate Personal Details Section (Multi-Candidate Cards) -->
+        <div style="margin-top: 1.5rem;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.6rem;">
+            <div>
+              <h3 style="font-family: var(--font-heading); font-size: 1.05rem; margin-bottom: 0.2rem; color:var(--text-main);">
+                3. Candidate Personal & Contact Information
+              </h3>
+              <p style="font-size: 0.8rem; color: var(--text-muted); margin:0;">
+                Automatically populated for each selected resume. Missing fields are highlighted for verification.
+              </p>
+            </div>
+          </div>
+
+          <div id="improve-personal-details-container">
+            <!-- Dynamic personal details cards generated per selected resume -->
+          </div>
+
+          <!-- Continue / OK Button below Personal Information section -->
+          <div style="display:flex; justify-content:flex-end; margin-top:0.8rem;">
+            <button type="button" class="btn btn-primary" id="btn-continue-improvement" onclick="runResumeImprovementAnalysis()" style="padding:0.6rem 1.25rem; font-size:0.9rem; font-weight:700;">
+              Continue &bull; Start Resume Improvement
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Results Area -->
+      <div id="improvement-results-area"></div>
+    </section>
+
+    <!-- TAB 4: FOLLOW-UPS -->
+    <section class="tab-pane" id="tab-followups">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Follow-Ups</h2>
+          <p class="section-subtitle">Candidate review queue, inactivity monitoring, and next actions</p>
+        </div>
+      </div>
+
+      <!-- Top Follow-ups Filter Bar -->
+      <div class="card" style="margin-bottom: 1.25rem; padding: 0.9rem 1.25rem;">
+        <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:0.85rem;">
+          <div style="display:flex; flex-wrap:wrap; align-items:center; gap:0.75rem; flex:1; min-width:280px;">
+            <div style="flex:1; min-width:200px;">
+              <input type="text" id="followups-search-input" class="form-control"
+                placeholder="Search candidate name, ID, notes..." oninput="filterFollowups()">
+            </div>
+            <div style="display:flex; align-items:center; gap:0.5rem;">
+              <label for="followups-status-filter"
+                style="font-size:0.82rem; color:var(--text-muted); white-space:nowrap; margin-bottom:0;">Filter
+                Status:</label>
+              <select id="followups-status-filter" class="form-control" style="width:160px;"
+                onchange="filterFollowups()">
+                <option value="">All Statuses</option>
+                <option value="pending_review">Pending Review</option>
+                <option value="reviewed">Reviewed</option>
+                <option value="shortlisted">Shortlisted</option>
+                <option value="contacted">Contacted</option>
+                <option value="hired">Hired</option>
+                <option value="in_progress">In Progress / Snoozed</option>
+                <option value="rejected">Rejected / Closed</option>
+              </select>
+            </div>
+            <div style="display:flex; align-items:center; gap:0.5rem;">
+              <label for="followups-sort-select"
+                style="font-size:0.82rem; color:var(--text-muted); white-space:nowrap; margin-bottom:0;">Sort:</label>
+              <select id="followups-sort-select" class="form-control" style="width:145px;"
+                onchange="filterFollowups()">
+                <option value="">Default Order</option>
+                <option value="name_asc">Name: A &rarr; Z</option>
+                <option value="name_desc">Name: Z &rarr; A</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Numeric Inactivity Threshold Input -->
+          <div
+            style="display:flex; align-items:center; gap:0.6rem; padding-left:0.85rem; border-left:1px solid var(--border-subtle); flex-wrap:wrap;">
+            <label for="inactivity-threshold-input"
+              style="font-size:0.82rem; color:var(--text-muted); white-space:nowrap; margin-bottom:0;">Inactivity
+              threshold (days):</label>
+            <input type="number" id="inactivity-threshold-input" class="inactivity-input-control" min="1" max="365"
+              step="1" value="30" onkeydown="if(event.key==='Enter') applyInactivityThreshold()">
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-apply-inactivity"
+              onclick="applyInactivityThreshold()">Apply</button>
+            <div id="inactivity-validation-msg" class="form-error-inline" style="display:none; width:100%;"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Document ID</th>
+                <th>Full Name</th>
+                <th>Status</th>
+                <th>Inactivity</th>
+                <th>Last Opened / Action</th>
+                <th>Next Due Date</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="followups-table-body">
+              <!-- Loaded dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 5: RESUME LIBRARY -->
+    <section class="tab-pane" id="tab-library">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Resume Library</h2>
+          <p class="section-subtitle">Centralized catalog of all processed candidate documents, versions, and verified
+            skills</p>
+        </div>
+
+        <div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
+          <input type="text" id="lib-search-input" class="form-control" style="width:240px;"
+            placeholder="Search Name, ID, file, skill..." oninput="loadLibrary()">
+          <select id="lib-status-filter" class="form-control" style="width:160px;" onchange="loadLibrary()">
+            <option value="">All Statuses</option>
+            <option value="pending_review">Pending Review</option>
+            <option value="reviewed">Reviewed</option>
+            <option value="shortlisted">Shortlisted</option>
+            <option value="contacted">Contacted</option>
+            <option value="hired">Hired</option>
+            <option value="rejected">Rejected / Closed</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Bulk Actions Toolbar -->
+      <div id="lib-bulk-toolbar" class="bulk-toolbar" style="display:none;">
+        <div class="bulk-toolbar-info">
+          <span id="lib-selected-count">0</span> resume(s) selected
+        </div>
+        <div class="bulk-toolbar-actions">
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-bulk-preview" onclick="bulkPreviewSelectedResumes()">
+            Preview
+          </button>
+          <button type="button" class="btn btn-primary btn-sm" id="btn-bulk-improve" onclick="bulkImproveSelectedResumes()">
+            Improve Resume
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-bulk-action" onclick="bulkActionSelectedResumes()">
+            Action
+          </button>
+          <button type="button" class="btn btn-danger btn-sm" id="btn-bulk-delete" onclick="openBulkDeleteModal()">
+            Delete Selected
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-clear-selection"
+            onclick="clearResumeSelection()">
+            Clear Selection
+          </button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width:40px; text-align:center;">
+                  <input type="checkbox" id="lib-select-all" onchange="toggleSelectAllResumes(this.checked)"
+                    title="Select all on this page">
+                </th>
+                <th>Document ID</th>
+                <th>Full Name</th>
+                <th>Original File</th>
+                <th>Status</th>
+                <th>Uploaded</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="library-table-body">
+              <!-- Loaded dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 6: NOTIFICATIONS -->
+    <section class="tab-pane" id="tab-notifications">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Notifications</h2>
+          <p class="section-subtitle">Candidate inactivity alerts, SLA milestones, and escalation notices</p>
+        </div>
+        <div style="display:flex; gap:0.6rem;">
+          <button class="btn btn-secondary btn-sm" onclick="loadNotifications()">Refresh Alerts</button>
+        </div>
+      </div>
+
+      <!-- Inactivity Info Banner -->
+      <div class="card"
+        style="margin-bottom: 1.25rem; background: var(--bg-surface-subtle); border: 1px solid var(--border-subtle);">
+        <div>
+          <h4 style="color:var(--text-main); font-size:0.92rem; margin-bottom:0.25rem;">
+            Candidate Escalation & Review
+          </h4>
+          <p style="font-size:0.82rem; color:var(--text-muted); margin:0; line-height: 1.5;">
+            Candidates with no recorded action for 90+ days or exceeding configured inactivity thresholds are flagged
+            for recruiter review. You can dispatch an email notice to the designated talent manager with the candidate
+            resume attached from DMS storage.
+          </p>
+        </div>
+      </div>
+
+      <!-- Notifications List -->
+      <div id="notifications-list-container" style="display:flex; flex-direction:column; gap:0.85rem;">
+        <!-- Loaded dynamically -->
+      </div>
+    </section>
+
+  </main>
+
+  <!-- MODALS -->
+
+  <!-- 1. Score Breakdown Modal -->
+  <div class="modal-overlay" id="score-breakdown-modal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title">Internal Score Breakdown</div>
+        <button class="modal-close-btn" onclick="closeModal('score-breakdown-modal')">&times;</button>
+      </div>
+      <div id="score-modal-content"></div>
+    </div>
+  </div>
+
+  <!-- 2. Record Action Modal -->
+  <div class="modal-overlay" id="record-action-modal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title">Record Recruiter Action</div>
+        <button class="modal-close-btn" onclick="closeModal('record-action-modal')">&times;</button>
+      </div>
+      <input type="hidden" id="action-modal-doc-id">
+      <div class="form-group">
+        <label class="form-label">Action Type</label>
+        <select id="action-type-select" class="form-control" onchange="onActionTypeChange()">
+          <option value="reviewed">Mark as Reviewed</option>
+          <option value="contacted">Mark as Contacted</option>
+          <option value="shortlisted">Add to Shortlist</option>
+          <option value="hired">Mark as Hired</option>
+          <option value="snooze">Snooze (Manual Days)</option>
+          <option value="rejected">Mark as Closed / Rejected</option>
+        </select>
+      </div>
+      <div class="form-group" id="snooze-duration-group"
+        style="display:none; background: var(--warning-subtle); border: 1px solid var(--warning-border); border-radius: var(--radius-md); padding: 0.85rem;">
+        <label class="form-label" style="color:var(--warning); margin-bottom:0.35rem;">Enter Snooze Duration
+          (Days)</label>
+        <div style="display:flex; align-items:center; gap:0.6rem;">
+          <input type="number" id="snooze-days-input" class="form-control" style="width:100px;" min="1" max="365"
+            value="7">
+          <span style="font-size:0.82rem; color:var(--text-muted);">Days until next follow-up alert</span>
+        </div>
+      </div>
+      <div class="form-group" id="action-hired-banner"
+        style="display:none; background: var(--success-subtle); border: 1px solid var(--success-border); border-radius: var(--radius-md); padding: 0.85rem;">
+        <div style="color:var(--success); font-weight:700; font-size:0.88rem; margin-bottom:0.25rem;">Candidate
+          Placement: HIRED</div>
+        <div style="font-size:0.8rem; color:var(--text-muted);">Status will be updated to HIRED across the pipeline and
+          Resume Library. Record placement notes below.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Recruiter Notes / Remarks</label>
+        <textarea id="action-notes-input" class="form-control"
+          placeholder="Add recruiter observations, interview feedback, or follow-up remarks..."></textarea>
+      </div>
+      <div style="display:flex; justify-content:flex-end; align-items:center; gap:0.6rem;">
+        <button class="btn btn-secondary" onclick="closeModal('record-action-modal')">Cancel</button>
+        <button class="btn btn-primary" onclick="submitRecordAction()">Save Action</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. Candidate PII Modal -->
+  <div class="modal-overlay" id="candidate-pii-modal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title">Authorized Personal Information</div>
+        <button class="modal-close-btn" onclick="closeModal('candidate-pii-modal')">&times;</button>
+      </div>
+      <div id="pii-modal-content"></div>
+    </div>
+  </div>
+
+  <!-- 4. Manage Job Openings Modal -->
+  <div class="modal-overlay" id="manage-jobs-modal">
+    <div class="modal-dialog" style="max-width: 720px;">
+      <div class="modal-header">
+        <div class="modal-title">Manage Job Openings</div>
+        <button class="modal-close-btn" onclick="closeModal('manage-jobs-modal')">&times;</button>
+      </div>
+
+      <!-- Add New Job Card -->
+      <div class="card" style="margin-bottom: 1.25rem; background: var(--bg-surface-subtle);">
+        <h4
+          style="font-family: var(--font-heading); font-size: 0.95rem; margin-bottom: 0.75rem; color: var(--primary);">+
+          Create New Job Opening</h4>
+        <div class="form-group">
+          <label class="form-label">Job Title</label>
+          <input type="text" id="new-job-title-input" class="form-control" placeholder="e.g. Senior Python Developer">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Job Description & Requirements</label>
+          <textarea id="new-job-text-input" class="form-control" style="min-height: 90px;"
+            placeholder="Paste job description, required skills, and qualifications..."></textarea>
+        </div>
+        <div style="display:flex; justify-content: flex-end;">
+          <button class="btn btn-primary btn-sm" onclick="createNewJobOpening()">Save Job Opening</button>
+        </div>
+      </div>
+
+      <!-- Active Jobs List -->
+      <h4 style="font-family: var(--font-heading); font-size: 0.95rem; margin-bottom: 0.75rem;">Active Job Openings</h4>
+      <div id="manage-jobs-list"
+        style="display: flex; flex-direction: column; gap: 0.75rem; max-height: 320px; overflow-y: auto;">
+        <!-- Loaded dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. General Confirmation Modal -->
+  <div class="modal-overlay" id="confirm-modal">
+    <div class="modal-dialog" style="max-width: 440px;">
+      <div class="modal-header">
+        <div class="modal-title" id="confirm-modal-title" style="color: var(--danger);">Confirm Action</div>
+        <button class="modal-close-btn" onclick="closeModal('confirm-modal')">&times;</button>
+      </div>
+      <p id="confirm-modal-message"
+        style="font-size: 0.86rem; color: var(--text-muted); margin-bottom: 1.25rem; line-height: 1.5;">
+        Are you sure you want to proceed?
+      </p>
+      <div style="display: flex; justify-content: flex-end; gap: 0.6rem;">
+        <button class="btn btn-secondary btn-sm" onclick="closeModal('confirm-modal')">Cancel</button>
+        <button class="btn btn-danger btn-sm" id="btn-confirm-action">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. Bulk Delete Confirmation Modal -->
+  <div class="modal-overlay" id="bulk-delete-modal">
+    <div class="modal-dialog" style="max-width: 480px;">
+      <div class="modal-header">
+        <div class="modal-title" style="color: var(--danger);">Confirm Bulk Deletion</div>
+        <button class="modal-close-btn" onclick="closeModal('bulk-delete-modal')">&times;</button>
+      </div>
+      <div style="margin-bottom: 1.25rem;">
+        <p style="font-size: 0.88rem; color: var(--text-main); margin-bottom: 0.75rem;">
+          You are about to delete <strong id="bulk-delete-count-display">0</strong> selected candidate resume(s).
+        </p>
+        <div
+          style="background: var(--danger-subtle); border: 1px solid var(--danger-border); border-radius: var(--radius-md); padding: 0.75rem; font-size: 0.8rem; color: var(--danger); line-height: 1.45;">
+          This operation permanently deletes the selected resume records, parsed candidate profiles, version history,
+          recruitment activity records, and associated files in DMS storage. This action cannot be undone.
+        </div>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 0.6rem;">
+        <button class="btn btn-secondary btn-sm" onclick="closeModal('bulk-delete-modal')">Cancel</button>
+        <button class="btn btn-danger btn-sm" id="btn-confirm-bulk-delete" onclick="executeBulkDelete()">Delete Selected
+          Resumes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 7. Escalation Email Modal -->
+  <div class="modal-overlay" id="escalation-email-modal">
+    <div class="modal-dialog" style="max-width: 550px;">
+      <div class="modal-header">
+        <div class="modal-title">Candidate Email Escalation</div>
+        <button class="modal-close-btn" onclick="closeModal('escalation-email-modal')">&times;</button>
+      </div>
+      <input type="hidden" id="email-modal-doc-id">
+      <div class="form-group">
+        <label class="form-label">Recipient Email</label>
+        <input type="email" id="email-modal-recipient" class="form-control" value="damayanthi.u@riscrm.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Escalation Reason / Notes</label>
+        <textarea id="email-modal-reason" class="form-control" style="min-height: 80px;"
+          placeholder="Reason for escalation or review summary..."></textarea>
+      </div>
+      <div
+        style="background: var(--bg-surface-subtle); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 0.75rem; margin-bottom: 1.1rem; font-size: 0.8rem; color: var(--text-muted);">
+        The candidate's original resume file from DMS storage will be attached automatically to this email.
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:0.6rem;">
+        <button class="btn btn-secondary btn-sm" onclick="closeModal('escalation-email-modal')">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="btn-send-escalation-email" onclick="submitEscalationEmail()">Send
+          Email with Resume Attached</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 8. Candidate Remarks & Recruiter Notes Modal -->
+  <div class="modal-overlay" id="candidate-remarks-modal">
+    <div class="modal-dialog" style="max-width: 650px;">
+      <div class="modal-header">
+        <div class="modal-title">Candidate Remarks & Activity</div>
+        <button class="modal-close-btn" onclick="closeModal('candidate-remarks-modal')">&times;</button>
+      </div>
+
+      <!-- Candidate Header Banner -->
+      <div id="remarks-candidate-banner"
+        style="background:var(--bg-surface-subtle); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:0.75rem 1rem; margin-bottom:1rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+        <!-- Filled dynamically -->
+      </div>
+
+      <!-- Add New Remark Form -->
+      <div class="card"
+        style="margin-bottom:1.1rem; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle); padding:0.9rem;">
+        <h4 style="font-family:var(--font-heading); margin-bottom:0.5rem; font-size:0.88rem; color:var(--primary);">
+          Add Recruiter Remark / Notes
+        </h4>
+        <input type="hidden" id="remark-modal-doc-id">
+        <div class="form-group" style="margin-bottom:0.65rem;">
+          <textarea id="new-remark-textarea" class="form-control" style="min-height:70px;"
+            placeholder="Enter candidate interview feedback, screening notes, follow-up remarks..."></textarea>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.6rem;">
+          <div style="display:flex; align-items:center; gap:0.5rem;">
+            <label for="new-remark-status" style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0;">Update
+              Status:</label>
+            <select id="new-remark-status" class="form-control" style="width:160px;">
+              <option value="">Keep Current Status</option>
+              <option value="reviewed">Reviewed</option>
+              <option value="contacted">Contacted</option>
+              <option value="shortlisted">Shortlisted</option>
+              <option value="hired">Hired</option>
+              <option value="rejected">Rejected / Closed</option>
+            </select>
+          </div>
+          <button type="button" class="btn btn-primary btn-sm" onclick="submitCandidateRemark()">Save Remark</button>
+        </div>
+      </div>
+
+      <!-- Chronological Remarks Timeline -->
+      <h4 style="font-family:var(--font-heading); margin-bottom:0.65rem; font-size:0.9rem;">Remarks & Activity History
+      </h4>
+      <div id="remarks-history-list"
+        style="display:flex; flex-direction:column; gap:0.65rem; max-height:300px; overflow-y:auto; padding-right:4px;">
+        <!-- Loaded dynamically -->
+      </div>
+      <div style="display:flex; justify-content:flex-end; margin-top:1rem;">
+        <button class="btn btn-secondary btn-sm" onclick="closeModal('candidate-remarks-modal')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 9. System Intelligence Services Modal (formerly IKM console) -->
+  <div class="modal-overlay" id="ikm-rag-modal">
+    <div class="modal-dialog" style="max-width: 720px;">
+      <div class="modal-header">
+        <div class="modal-title">System Status & Intelligence Services</div>
+        <button class="modal-close-btn" onclick="closeModal('ikm-rag-modal')">&times;</button>
+      </div>
+
+      <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1rem;">
+        Enterprise platform services, document indexing, and semantic search connectivity.
+      </p>
+
+      <!-- Status Cards Grid -->
+      <div class="grid-3" style="gap: 0.75rem; margin-bottom: 1rem;">
+        <div class="card" style="padding: 0.85rem; background: var(--bg-surface-subtle);">
+          <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em;">
+            Platform Status</div>
+          <div id="ikm-modal-status-text"
+            style="font-size: 1rem; font-weight: 700; color: var(--success); margin-top: 0.25rem;">Online</div>
+          <div id="ikm-modal-url"
+            style="font-size: 0.72rem; color: var(--text-dim); margin-top: 0.2rem; word-break: break-all;">Local
+            Processing Engine Active</div>
+        </div>
+
+        <div class="card" style="padding: 0.85rem; background: var(--bg-surface-subtle);">
+          <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em;">
+            Security / Encryption</div>
+          <div id="ikm-modal-auth-text"
+            style="font-size: 1rem; font-weight: 700; color: var(--primary); margin-top: 0.25rem;">Active</div>
+          <div id="ikm-modal-user" style="font-size: 0.72rem; color: var(--text-dim); margin-top: 0.2rem;">AES-Fernet
+            PII Protection</div>
+        </div>
+
+        <div class="card" style="padding: 0.85rem; background: var(--bg-surface-subtle);">
+          <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em;">
+            Audit Logging</div>
+          <div id="ikm-modal-guard-text"
+            style="font-size: 1rem; font-weight: 700; color: var(--accent-cyan); margin-top: 0.25rem;">Enabled</div>
+          <div id="ikm-modal-service" style="font-size: 0.72rem; color: var(--text-dim); margin-top: 0.2rem;">Complete
+            Activity Trail</div>
+        </div>
+      </div>
+
+      <!-- Environment Notice -->
+      <div id="ikm-password-alert"
+        style="background: var(--bg-surface-subtle); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.8rem; color: var(--text-muted);">
+        <strong style="color:var(--text-main);">Configuration Note:</strong> High-precision internal parsing and
+        screening engines guarantee zero downtime. RAG engine endpoints can be maintained in configuration without
+        interrupting recruiter operations.
+      </div>
+
+      <!-- Interactive Tools Navigation -->
+      <div
+        style="display:flex; gap:0.5rem; margin-bottom:0.85rem; border-bottom:1px solid var(--border-subtle); padding-bottom:0.5rem;">
+        <button class="btn btn-sm btn-secondary" id="btn-ikm-tab-test" onclick="switchIKMTab('test')"
+          style="font-weight:600;">Engine Diagnostics</button>
+        <button class="btn btn-sm btn-secondary" id="btn-ikm-tab-search" onclick="switchIKMTab('search')"
+          style="font-weight:600;">Semantic Resume Search</button>
+        <button class="btn btn-sm btn-secondary" id="btn-ikm-tab-chat" onclick="switchIKMTab('chat')"
+          style="font-weight:600;">AI Assistant</button>
+      </div>
+
+      <!-- Tab A: Test Auth -->
+      <div id="ikm-tab-test-panel">
+        <div style="display:flex; gap:0.6rem; align-items:flex-end; flex-wrap:wrap; margin-bottom:0.75rem;">
+          <div style="flex:1; min-width:160px;">
+            <label class="form-label" style="font-size:0.75rem;">Username</label>
+            <input type="text" id="ikm-test-user-input" class="form-control" value="digital-msl" autocomplete="off">
+          </div>
+          <div style="flex:1; min-width:160px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.2rem;">
+              <label class="form-label" style="font-size:0.75rem; margin-bottom:0;">Password</label>
+              <label style="font-size:0.72rem; color:var(--text-muted); cursor:pointer; display:flex; align-items:center; gap:0.3rem;">
+                <input type="checkbox" id="ikm-use-env-pass-check" checked onchange="toggleIKMEnvPass(this)"> Use .env
+              </label>
+            </div>
+            <input type="password" id="ikm-test-pass-input" class="form-control"
+              value="••••••••••••••••••••"
+              disabled
+              autocomplete="new-password"
+              placeholder="Loaded from .env">
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="runIKMAuthTest()" style="height:36px;">Test
+            Connection</button>
+        </div>
+        <div id="ikm-auth-test-result"
+          style="display:none; font-size:0.8rem; padding:0.6rem 0.85rem; border-radius:var(--radius-md);"></div>
+      </div>
+
+      <!-- Tab B: RAG Semantic Search -->
+      <div id="ikm-tab-search-panel" style="display:none;">
+        <div style="display:flex; gap:0.6rem; margin-bottom:0.75rem;">
+          <input type="text" id="ikm-search-query-input" class="form-control"
+            placeholder="e.g. Candidates with Docker, Kubernetes, microservices...">
+          <button class="btn btn-primary btn-sm" onclick="runIKMSearch()">Search</button>
+        </div>
+        <div id="ikm-search-results-list"
+          style="max-height:220px; overflow-y:auto; display:flex; flex-direction:column; gap:0.5rem;">
+          <div style="font-size:0.8rem; color:var(--text-muted); text-align:center; padding:1.25rem 0;">Enter a query
+            above to search candidate resumes.</div>
+        </div>
+      </div>
+
+      <!-- Tab C: RAG Chat Assistant -->
+      <div id="ikm-tab-chat-panel" style="display:none;">
+        <div id="ikm-chat-messages"
+          style="max-height:200px; overflow-y:auto; display:flex; flex-direction:column; gap:0.5rem; margin-bottom:0.75rem; padding:0.5rem; background:var(--bg-surface-subtle); border-radius:var(--radius-md); border:1px solid var(--border-subtle);">
+          <div style="font-size:0.8rem; color:var(--text-muted);">AI Assistant is ready. Inquire about candidate skills,
+            experience, or job alignment.</div>
+        </div>
+        <div style="display:flex; gap:0.6rem;">
+          <input type="text" id="ikm-chat-query-input" class="form-control"
+            placeholder="Ask a question about candidates..." onkeypress="if(event.key==='Enter') runIKMChat()">
+          <button class="btn btn-primary btn-sm" onclick="runIKMChat()">Ask</button>
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; margin-top:1rem;">
+        <button class="btn btn-secondary btn-sm" onclick="closeModal('ikm-rag-modal')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 10. Resume Preview Modal with Side Navigation (< and >) and In-App Viewing -->
+  <div class="modal-overlay" id="resume-preview-modal">
+    <div class="modal-dialog preview-modal-dialog">
+      <div class="modal-header">
+        <div class="preview-header-meta">
+          <span class="preview-candidate-name" id="preview-modal-candidate-name">Candidate Resume</span>
+          <span class="candidate-doc-tag" id="preview-modal-doc-tag" style="margin:0;">ID: -</span>
+          <span class="file-status-badge badge-ready" id="preview-modal-counter">1 of 1</span>
+        </div>
+
+        <!-- Document Multipage Navigation (Page X of Y) -->
+        <div id="preview-doc-page-controls" class="preview-page-controls" style="display:none; align-items:center; gap:0.5rem;">
+          <button type="button" class="btn btn-secondary btn-sm" id="preview-page-prev" onclick="changeDocumentPage(-1)" style="padding:0.2rem 0.55rem; font-size:0.75rem;">&lsaquo; Prev Page</button>
+          <span id="preview-page-counter" style="font-size:0.8rem; font-weight:600; color:var(--text-main); min-width:85px; text-align:center;">Page 1 of 1</span>
+          <button type="button" class="btn btn-secondary btn-sm" id="preview-page-next" onclick="changeDocumentPage(1)" style="padding:0.2rem 0.55rem; font-size:0.75rem;">Next Page &rsaquo;</button>
+        </div>
+
+        <button class="modal-close-btn" onclick="closeModal('resume-preview-modal')">&times;</button>
+      </div>
+      <div class="preview-nav-layout">
+        <button type="button" class="preview-nav-btn" id="preview-btn-prev" onclick="navigateResumePreview(-1)" title="Previous Candidate (&larr;)">&lt;</button>
+        <div class="preview-content-box" id="preview-content-box">
+          <div id="preview-inapp-container" class="preview-inapp-container">
+            <div id="preview-paper-sheet" class="preview-paper-sheet"></div>
+          </div>
+          <iframe id="preview-modal-frame" class="preview-frame" src="about:blank" style="display:none;"></iframe>
+        </div>
+        <button type="button" class="preview-nav-btn" id="preview-btn-next" onclick="navigateResumePreview(1)" title="Next Candidate (&rarr;)">&gt;</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 11. Side-by-Side Version Comparison Modal -->
+  <div class="modal-overlay" id="version-compare-modal">
+    <div class="modal-dialog compare-modal-dialog">
+      <div class="modal-header">
+        <div>
+          <div class="modal-title">Side-by-Side Resume Comparison</div>
+          <div style="font-size:0.78rem; color:var(--text-muted); margin-top:2px;">
+            <span class="diff-added">+ Added / Enhanced</span> &nbsp;|&nbsp;
+            <span class="diff-removed">- Removed</span> &nbsp;|&nbsp;
+            <span class="diff-modified">~ Modified</span>
+          </div>
+        </div>
+        <button class="modal-close-btn" onclick="closeModal('version-compare-modal')">&times;</button>
+      </div>
+      <div class="compare-grid">
+        <div class="compare-panel">
+          <div class="compare-panel-header">
+            <span>📄 Original Resume (Baseline)</span>
+            <span class="file-status-badge badge-ready" id="compare-original-badge">Original</span>
+          </div>
+          <div class="compare-panel-body" id="compare-original-body"></div>
+        </div>
+        <div class="compare-panel">
+          <div class="compare-panel-header">
+            <span>✨ Revised Document (With Approved Enhancements)</span>
+            <span class="file-status-badge badge-ready" id="compare-revised-badge" style="background:var(--primary-subtle); color:var(--primary); border-color:var(--primary-border);">Revised</span>
+          </div>
+          <div class="compare-panel-body" id="compare-revised-body"></div>
+        </div>
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:0.6rem; margin-top:1rem;">
+        <button class="btn btn-secondary btn-sm" onclick="closeModal('version-compare-modal')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container"></div>
+
+  <!-- Scripts -->
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+
+</html>

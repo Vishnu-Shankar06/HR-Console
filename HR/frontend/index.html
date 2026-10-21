@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HR Console — Recruitment & Resume Intelligence Platform</title>
+  <meta name="description" content="All-in-one AI recruitment management system for non-technical recruiters. Find candidates, improve resumes, and manage follow-ups.">
+  <link rel="stylesheet" href="/static/css/main.css">
+</head>
+<body>
+
+  <!-- Top Glassmorphism Header -->
+  <header class="app-header">
+    <div class="brand-section">
+      <div class="brand-icon">⚡</div>
+      <div class="brand-text">
+        <h1>HR Console</h1>
+        <p>Recruitment & Resume Platform</p>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <div class="system-badge">
+        <span class="pulse-dot"></span>
+        <span>Knowledge Systems Online</span>
+      </div>
+
+      <!-- IKM RAG Builder Live Indicator & Console -->
+      <div class="ikm-badge" id="header-ikm-badge" onclick="openIKMModal()" title="Click to view company IKM / RAG Builder engine status & tools" style="cursor: pointer; display: flex; align-items: center; gap: 0.5rem; background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); padding: 0.35rem 0.85rem; border-radius: var(--radius-full); font-size: 0.82rem; font-weight: 600; color: #6ee7b7; transition: all 0.2s;">
+        <span class="pulse-dot" id="header-ikm-dot" style="background:#10b981;"></span>
+        <span id="header-ikm-text">IKM RAG Builder</span>
+      </div>
+
+      <div class="admin-badge" style="display: flex; align-items: center; gap: 0.5rem; background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.3); padding: 0.35rem 0.85rem; border-radius: var(--radius-full); font-size: 0.82rem; font-weight: 700; color: #c7d2fe;">
+        <span>👑</span>
+        <span>Administrator</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Navigation Tabs Bar -->
+  <nav class="nav-tabs-bar">
+    <button class="nav-tab-btn active" data-tab="dashboard">
+      <span>📊</span> Dashboard
+    </button>
+    <button class="nav-tab-btn" data-tab="matching">
+      <span>🎯</span> Find Candidates
+    </button>
+    <button class="nav-tab-btn" data-tab="improvement">
+      <span>✏️</span> Improve Resume
+    </button>
+    <button class="nav-tab-btn" data-tab="followups">
+      <span>⏰</span> Resume Follow-ups <span class="tab-badge" id="badge-followups-count">0</span>
+    </button>
+    <button class="nav-tab-btn" data-tab="library">
+      <span>📁</span> Resume Library <span class="tab-badge" id="badge-library-count">0</span>
+    </button>
+    <button class="nav-tab-btn" data-tab="notifications">
+      <span>🔔</span> Notifications <span class="tab-badge" id="badge-notifications-count">0</span>
+    </button>
+  </nav>
+
+  <!-- Main Container -->
+  <main class="app-container">
+
+    <!-- TAB 1: DASHBOARD -->
+    <section class="tab-pane active" id="tab-dashboard">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Recruitment Operations Overview</h2>
+          <p class="section-subtitle">Real-time candidate pipeline, review queue, and active intelligence metrics</p>
+        </div>
+      </div>
+
+      <!-- Metric Cards Grid -->
+      <div class="grid-4" style="margin-bottom: 2rem;">
+        <div class="metric-card">
+          <div class="metric-icon">📑</div>
+          <div class="metric-data">
+            <div class="metric-value" id="stat-total-resumes">0</div>
+            <div class="metric-label">Processed Resumes</div>
+          </div>
+        </div>
+
+        <div class="metric-card warning" style="cursor: pointer;" onclick="goToPendingFollowups()" title="Click to view and review pending candidates in Follow-ups">
+          <div class="metric-icon">⏳</div>
+          <div class="metric-data">
+            <div class="metric-value" id="stat-awaiting-review">0</div>
+            <div class="metric-label">Awaiting Initial Review <span style="font-size:0.75rem; text-decoration:underline; color:var(--warning); margin-left:4px;">View ➔</span></div>
+          </div>
+        </div>
+
+        <div class="metric-card danger">
+          <div class="metric-icon">🔔</div>
+          <div class="metric-data">
+            <div class="metric-value" id="stat-followups-due">0</div>
+            <div class="metric-label">Follow-ups Due & Overdue</div>
+          </div>
+        </div>
+
+        <div class="metric-card success" style="cursor: pointer;" onclick="openManageJobsModal()" title="Click to manage active job openings">
+          <div class="metric-icon">💼</div>
+          <div class="metric-data">
+            <div class="metric-value" id="stat-active-jobs">0</div>
+            <div class="metric-label">Active Job Openings <span style="font-size:0.75rem; text-decoration:underline; color:var(--accent-cyan); margin-left:4px;">Manage ⚙️</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Skill Cloud and Recent Activity -->
+      <div class="grid-2">
+        <div class="card">
+          <h3 style="font-family: var(--font-heading); margin-bottom: 1rem;">Candidate Talent Skill Distribution</h3>
+          <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1.2rem;">
+            Most prominent verified technical proficiencies extracted across candidate resumes
+          </p>
+          <div class="tags-row" id="dashboard-skills-cloud" style="min-height: 120px;">
+            <!-- Loaded dynamically -->
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 style="font-family: var(--font-heading); margin-bottom: 1rem;">Recent Recruiter Activity</h3>
+          <div class="data-table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Doc ID</th>
+                  <th>Action</th>
+                  <th>Details</th>
+                  <th>Owner</th>
+                  <th>Date</th>
+                </tr>
+              </thead>
+              <tbody id="dashboard-activity-body">
+                <!-- Loaded dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: FIND CANDIDATES -->
+    <section class="tab-pane" id="tab-matching">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Find Candidates</h2>
+          <p class="section-subtitle">Match job requirements against verified resume evidence with transparent scoring</p>
+        </div>
+      </div>
+
+      <div class="grid-2" style="margin-bottom: 2rem;">
+        <!-- Left: Upload & Shortlist Input -->
+        <div class="card">
+          <h3 style="font-family: var(--font-heading); margin-bottom: 0.6rem;">1. Resume Library & Upload</h3>
+          <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1rem;">
+            Upload new candidate resumes (PDF, DOCX) or utilize existing processed resumes in the DMS repository.
+          </p>
+
+          <div class="dropzone" id="match-dropzone">
+            <div class="dropzone-icon">📥</div>
+            <div class="dropzone-text">Click or drag resume files here to upload</div>
+            <div class="dropzone-subtext">Supports PDF & DOCX up to 15MB. Multi-file batch upload supported.</div>
+            <input type="file" id="match-file-input" multiple accept=".pdf,.docx,.doc,.txt" style="display:none;">
+          </div>
+
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:1.2rem; margin-bottom:0.4rem;">
+            <div style="font-weight:600; font-size:0.86rem; color:var(--text-main); display:flex; align-items:center; gap:0.5rem;">
+              <span>📁 Uploaded Resumes for Current Search</span>
+              <span id="match-uploaded-count-pill" class="badge-ready file-status-badge" style="font-size:0.7rem; display:none;">0 Files</span>
+            </div>
+            <button type="button" id="btn-clear-all-uploads" class="btn btn-secondary btn-sm" onclick="clearAllUploadedResumes()" style="font-size:0.75rem; padding:0.2rem 0.6rem; display:none;" title="Remove all uploaded candidate files">
+              🗑️ Clear All
+            </button>
+          </div>
+
+          <div class="upload-files-list" id="match-upload-progress"></div>
+
+          <!-- Matching Search Scope Selector -->
+          <div class="matching-scope-box" style="margin-top:1.1rem; background:rgba(255,255,255,0.02); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:0.8rem 1rem;">
+            <div style="font-size:0.75rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:0.5rem;">
+              Target Search Scope
+            </div>
+            <div style="display:flex; flex-direction:column; gap:0.5rem;">
+              <label style="display:inline-flex; align-items:center; gap:0.5rem; cursor:pointer; font-size:0.86rem;">
+                <input type="radio" name="match_scope" id="scope-uploaded-only" value="uploaded" checked onchange="onMatchScopeChanged()">
+                <span style="font-weight:600; color:var(--text-main);">
+                  🎯 Only Uploaded Resumes (<span id="scope-uploaded-count">0</span>)
+                </span>
+                <span style="font-size:0.74rem; color:var(--accent-cyan); margin-left:auto;">(Ignores other library files)</span>
+              </label>
+              <label style="display:inline-flex; align-items:center; gap:0.5rem; cursor:pointer; font-size:0.86rem;">
+                <input type="radio" name="match_scope" id="scope-all-library" value="all" onchange="onMatchScopeChanged()">
+                <span style="color:var(--text-muted);">
+                  📚 Entire Resume Library (<span id="scope-all-count">0</span>)
+                </span>
+                <span style="font-size:0.74rem; color:var(--text-dim); margin-left:auto;">(All candidates in database)</span>
+              </label>
+            </div>
+          </div>
+
+          <hr style="border: none; border-top: 1px solid var(--border-subtle); margin: 1.5rem 0;">
+
+          <!-- Shortlist Count Section -->
+          <div class="form-group">
+            <label class="form-label" for="match-top-n-input">2. Shortlist Candidate Count (Manually Typable)</label>
+            <div class="top-n-input-wrapper">
+              <input type="number" id="match-top-n-input" class="top-n-input" min="1" max="100" value="5" placeholder="5">
+              <div class="top-n-hint">
+                Type any number between 1 and 100. The system will return the top eligible candidates.
+              </div>
+            </div>
+            <div id="match-validation-error" style="color: var(--danger); font-size: 0.8rem; margin-top: 0.4rem;"></div>
+          </div>
+        </div>
+
+        <!-- Right: Job Description -->
+        <div class="card">
+          <h3 style="font-family: var(--font-heading); margin-bottom: 0.6rem;">3. Job Description</h3>
+          <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1rem;">
+            Choose from an open requisition or type/paste candidate requirements.
+          </p>
+
+          <div class="form-group">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.45rem;">
+              <label class="form-label" for="match-job-select" style="margin-bottom:0;">Select Saved Job Opening</label>
+              <div style="display:flex; gap:0.4rem;">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="openManageJobsModal()" title="Add or manage job openings">+ Manage Jobs</button>
+                <button type="button" id="btn-delete-selected-job" class="btn btn-danger btn-sm" onclick="deleteCurrentlySelectedJob()" style="display:none;" title="Delete this selected job opening">🗑️ Delete</button>
+              </div>
+            </div>
+            <select id="match-job-select" class="form-control">
+              <option value="">-- Select Saved Job Description --</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="match-jd-textarea">Job Requirements Text</label>
+            <textarea id="match-jd-textarea" class="form-control" placeholder="Paste or type job description, required skills, and qualifications here...">Python backend developer with FastAPI, PostgreSQL, REST API development, and relevant project experience.</textarea>
+          </div>
+
+          <button id="btn-run-match" class="btn btn-primary" style="width:100%;" onclick="runCandidateMatching()">
+            Show Results
+          </button>
+        </div>
+      </div>
+
+      <!-- Match Results Section -->
+      <div id="match-results-container"></div>
+    </section>
+
+    <!-- TAB 3: IMPROVE RESUME -->
+    <section class="tab-pane" id="tab-improvement">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Improve Resume</h2>
+          <p class="section-subtitle">Evidence-grounded gap analysis, suggested rewrites, and draft versioning</p>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom: 2rem;">
+        <div class="grid-2">
+          <div class="form-group">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.45rem;">
+              <label class="form-label" for="improve-resume-select" style="margin-bottom:0;">Candidate Resume</label>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('improve-resume-file-input').click()" style="font-size:0.75rem; padding:0.2rem 0.65rem;" title="Upload a new resume to improve">
+                📤 Upload Resume File
+              </button>
+            </div>
+            <select id="improve-resume-select" class="form-control" onchange="onImproveResumeSelected()"></select>
+
+            <!-- Quick Upload Dropzone -->
+            <div class="dropzone" id="improve-dropzone" style="margin-top: 0.6rem; padding: 0.85rem 1rem; border-style: dashed; border-width: 1px; cursor: pointer; background: rgba(255,255,255,0.015);">
+              <div style="display:flex; align-items:center; justify-content:center; gap:0.6rem;">
+                <span style="font-size:1.1rem;">📄</span>
+                <span style="font-size:0.82rem; color:var(--text-muted);">
+                  Or <strong style="color:var(--accent-cyan); text-decoration:underline;">click or drop</strong> Word (.docx) / PDF to upload & select immediately
+                </span>
+              </div>
+              <input type="file" id="improve-resume-file-input" accept=".docx,.pdf,.doc,.txt" style="display:none;">
+            </div>
+            <div id="improve-upload-status" style="margin-top:0.45rem; font-size:0.8rem; display:none;"></div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="improve-job-select">Select Target Job Opening</label>
+            <select id="improve-job-select" class="form-control"></select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="improve-custom-jd">Or Type Custom Job Requirements (Optional)</label>
+          <textarea id="improve-custom-jd" class="form-control" style="min-height: 80px;" placeholder="Optional: Provide custom JD text to benchmark candidate against..."></textarea>
+        </div>
+
+        <!-- Candidate Personal Details Section -->
+        <div class="card" style="background: rgba(99, 102, 241, 0.05); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: var(--radius-sm); padding: 1.15rem; margin-bottom: 1.2rem;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.6rem; margin-bottom:0.85rem;">
+            <div>
+              <strong style="color:#fff; font-size:0.95rem; display:flex; align-items:center; gap:0.45rem;">
+                <span>👤</span> Candidate Personal Details & Contact Information
+              </strong>
+              <span style="font-size:0.78rem; color:var(--text-muted);">
+                Preserved verbatim in the improved resume header and Word (.docx) export. Edit or add missing details below.
+              </span>
+            </div>
+            <div style="display:flex; gap:0.4rem;">
+              <button type="button" class="btn btn-secondary btn-sm" onclick="fetchAndPopulateCandidatePII()" style="font-size:0.75rem;">
+                🔄 Auto-Detect Details
+              </button>
+              <button type="button" class="btn btn-primary btn-sm" onclick="applyPersonalDetailsToDraft()" style="font-size:0.75rem;">
+                ✨ Apply Details to Draft
+              </button>
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0.8rem;">
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label" style="font-size:0.78rem;">Full Name</label>
+              <input type="text" id="improve-cand-name" class="form-control" placeholder="e.g. Alfred S" oninput="onPersonalDetailsInputChange()">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label" style="font-size:0.78rem;">Target Headline / Professional Title</label>
+              <input type="text" id="improve-cand-role" class="form-control" placeholder="e.g. Veeva Developer / Salesforce Consultant" oninput="onPersonalDetailsInputChange()">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label" style="font-size:0.78rem;">Phone Number</label>
+              <input type="text" id="improve-cand-phone" class="form-control" placeholder="e.g. +91 98765 43210" oninput="onPersonalDetailsInputChange()">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label" style="font-size:0.78rem;">Email Address</label>
+              <input type="email" id="improve-cand-email" class="form-control" placeholder="e.g. candidate@example.com" oninput="onPersonalDetailsInputChange()">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label" style="font-size:0.78rem;">Location / City</label>
+              <input type="text" id="improve-cand-location" class="form-control" placeholder="e.g. Chennai, India" oninput="onPersonalDetailsInputChange()">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label" style="font-size:0.78rem;">LinkedIn / Portfolio URL</label>
+              <input type="text" id="improve-cand-links" class="form-control" placeholder="e.g. linkedin.com/in/candidate" oninput="onPersonalDetailsInputChange()">
+            </div>
+          </div>
+        </div>
+
+        <button id="btn-analyze-improvement" class="btn btn-primary" onclick="runResumeImprovementAnalysis()">
+          Analyze Resume Alignment
+        </button>
+      </div>
+
+      <!-- Results Area -->
+      <div id="improvement-results-area"></div>
+
+      <!-- Version History -->
+      <div class="card" style="margin-top: 2rem;">
+        <h3 style="font-family: var(--font-heading); margin-bottom: 0.6rem;">Candidate Revision Version History</h3>
+        <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1rem;">
+          Previous revisions created for this candidate. Original resume file is preserved immutable in DMS.
+        </p>
+        <div id="improvement-version-history">
+          <p class="text-dim text-center" style="padding:1rem;">Select a candidate resume above to inspect version history.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: FOLLOW-UPS -->
+    <section class="tab-pane" id="tab-followups">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Resume Follow-ups & Candidate Development</h2>
+          <p class="section-subtitle">Track candidate records needing recruiter action, filter by recruitment status, and follow up</p>
+        </div>
+      </div>
+
+      <!-- Top Follow-ups Filter Bar -->
+      <div class="card" style="margin-bottom: 1.2rem; padding: 1rem 1.4rem;">
+        <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:1rem;">
+          <div style="display:flex; flex-wrap:wrap; align-items:center; gap:0.8rem; flex:1; min-width:300px;">
+            <div style="position:relative; flex:1; min-width:220px;">
+              <span style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--text-dim); pointer-events:none;">🔍</span>
+              <input type="text" id="followups-search-input" class="form-control" style="padding-left:2.4rem;" placeholder="Search candidate ID, recruiter notes, action..." oninput="filterFollowups()">
+            </div>
+            <div style="display:flex; align-items:center; gap:0.5rem;">
+              <label for="followups-status-filter" style="font-size:0.82rem; color:var(--text-muted); white-space:nowrap; margin-bottom:0;">Filter Status:</label>
+              <select id="followups-status-filter" class="form-control" style="width:190px;" onchange="filterFollowups()">
+                <option value="">All Statuses</option>
+                <option value="pending_review">Pending Review</option>
+                <option value="reviewed">Reviewed</option>
+                <option value="shortlisted">Shortlisted</option>
+                <option value="contacted">Contacted</option>
+                <option value="hired">🎉 Hired</option>
+                <option value="in_progress">In Progress / Snoozed</option>
+                <option value="rejected">Rejected / Closed</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:0.8rem; padding-left:1rem; border-left:1px solid var(--border-subtle);">
+            <span style="font-size:0.82rem; color:var(--text-muted); white-space:nowrap;">Inactivity:</span>
+            <input type="range" id="inactivity-days-slider" min="1" max="90" value="30" style="cursor:pointer; width:100px;" oninput="document.getElementById('inactivity-days-label').textContent = this.value + ' Days'" onchange="loadFollowups()">
+            <span class="file-status-badge badge-duplicate" id="inactivity-days-label">30 Days</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Document ID</th>
+                <th>Status</th>
+                <th>Inactivity</th>
+                <th>Last Opened / Action</th>
+                <th>Next Due Date</th>
+                <th>Recommended Action</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="followups-table-body">
+              <!-- Loaded dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 5: RESUME LIBRARY -->
+    <section class="tab-pane" id="tab-library">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Resume Library</h2>
+          <p class="section-subtitle">Centralized catalog of all processed candidate documents and version history</p>
+        </div>
+
+        <div style="display:flex; gap:0.8rem;">
+          <input type="text" id="lib-search-input" class="form-control" style="width:260px;" placeholder="Search ID, file, skill..." oninput="loadLibrary()">
+          <select id="lib-status-filter" class="form-control" style="width:175px;" onchange="loadLibrary()">
+            <option value="">All Statuses</option>
+            <option value="pending_review">Pending Review</option>
+            <option value="reviewed">Reviewed</option>
+            <option value="shortlisted">Shortlisted</option>
+            <option value="contacted">Contacted</option>
+            <option value="hired">🎉 Hired</option>
+            <option value="rejected">Rejected / Closed</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Document ID</th>
+                <th>Original File</th>
+                <th>Status</th>
+                <th>Skills Extracted</th>
+                <th>Uploaded</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="library-table-body">
+              <!-- Loaded dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 6: NOTIFICATIONS -->
+    <section class="tab-pane" id="tab-notifications">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Inactivity & Escalation Notifications</h2>
+          <p class="section-subtitle">Automated candidate dormancy monitoring, review SLA alerts, and direct email dispatches</p>
+        </div>
+        <div style="display:flex; gap:0.6rem;">
+          <button class="btn btn-secondary btn-sm" onclick="loadNotifications()">🔄 Refresh Alerts</button>
+        </div>
+      </div>
+
+      <!-- Inactivity Info Banner -->
+      <div class="card" style="margin-bottom: 1.5rem; background: rgba(99, 102, 241, 0.05); border: 1px solid rgba(99, 102, 241, 0.25);">
+        <div>
+          <h4 style="color:#c7d2fe; margin-bottom:0.35rem; display:flex; align-items:center; gap:0.5rem;">
+            <span>📋</span> Recruitment Escalation & Review
+          </h4>
+          <p style="font-size:0.83rem; color:var(--text-muted); margin:0; line-height: 1.5;">
+            Candidates with no recorded action for 3+ months (90 days) or exceeding your configured inactivity threshold are automatically flagged for leadership review.
+            You can attach their original resume file from DMS storage and dispatch an escalation email to <strong>damayanthi.u@riscrm.com</strong>.
+          </p>
+        </div>
+      </div>
+
+      <!-- Notifications List -->
+      <div id="notifications-list-container" style="display:flex; flex-direction:column; gap:1rem;">
+        <!-- Loaded dynamically -->
+      </div>
+    </section>
+
+  </main>
+
+  <!-- MODALS -->
+
+  <!-- 1. Score Breakdown Modal -->
+  <div class="modal-overlay" id="score-breakdown-modal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title">Internal Score Breakdown</div>
+        <button class="modal-close-btn">&times;</button>
+      </div>
+      <div id="score-modal-content"></div>
+    </div>
+  </div>
+
+  <!-- 2. Record Action Modal -->
+  <div class="modal-overlay" id="record-action-modal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title">Record Recruiter Action</div>
+        <button class="modal-close-btn">&times;</button>
+      </div>
+      <input type="hidden" id="action-modal-doc-id">
+      <div class="form-group">
+        <label class="form-label">Action Type</label>
+        <select id="action-type-select" class="form-control" onchange="onActionTypeChange()">
+          <option value="reviewed">Mark as Reviewed</option>
+          <option value="contacted">Mark as Contacted</option>
+          <option value="shortlisted">Add to Shortlist</option>
+          <option value="hired">🎉 Mark as Hired</option>
+          <option value="snooze">Snooze (Manual Days)</option>
+          <option value="rejected">Mark as Closed / Rejected</option>
+        </select>
+      </div>
+      <div class="form-group" id="snooze-duration-group" style="display:none; background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; padding: 0.85rem;">
+        <label class="form-label" style="color:var(--warning); margin-bottom:0.35rem;">Enter Snooze Duration (Days)</label>
+        <div style="display:flex; align-items:center; gap:0.6rem;">
+          <input type="number" id="snooze-days-input" class="form-control" style="width:110px;" min="1" max="365" value="7">
+          <span style="font-size:0.84rem; color:#fde68a;">Days until follow-up alert & notification</span>
+        </div>
+        <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.4rem;">
+          When this snooze period expires, a follow-up notification will appear and the candidate will be ready for email follow-up.
+        </div>
+      </div>
+      <div class="form-group" id="action-hired-banner" style="display:none; background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 8px; padding: 0.85rem;">
+        <div style="color:#10b981; font-weight:700; font-size:0.9rem; margin-bottom:0.25rem;">🎉 Candidate Milestone: HIRED</div>
+        <div style="font-size:0.8rem; color:#cbd5e1;">Candidate status will be updated to <strong>HIRED</strong> across the pipeline and Resume Library. Record placement remarks or offer notes below.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Recruiter Notes / Remarks</label>
+        <textarea id="action-notes-input" class="form-control" placeholder="Add recruiter observations, interview feedback, or follow-up remarks..."></textarea>
+      </div>
+      <div style="display:flex; justify-content:flex-end; align-items:center; flex-wrap:wrap; gap:0.6rem;">
+        <button class="btn btn-secondary" onclick="closeModal('record-action-modal')">Cancel</button>
+        <button class="btn btn-primary" onclick="submitRecordAction()">💾 Save Action & Remarks</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. Candidate Development Plan Modal -->
+  <div class="modal-overlay" id="candidate-dev-plan-modal">
+    <div class="modal-dialog" style="max-width: 720px;">
+      <div class="modal-header">
+        <div class="modal-title">Candidate Development Plan</div>
+        <button class="modal-close-btn">&times;</button>
+      </div>
+      <div id="dev-plan-modal-content"></div>
+    </div>
+  </div>
+
+  <!-- 4. Candidate PII Modal -->
+  <div class="modal-overlay" id="candidate-pii-modal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title">Authorized Personal Information</div>
+        <button class="modal-close-btn">&times;</button>
+      </div>
+      <div id="pii-modal-content"></div>
+    </div>
+  </div>
+
+  <!-- 5. Manage Job Openings Modal -->
+  <div class="modal-overlay" id="manage-jobs-modal">
+    <div class="modal-dialog" style="max-width: 760px;">
+      <div class="modal-header">
+        <div class="modal-title">Manage Active Job Openings</div>
+        <button class="modal-close-btn">&times;</button>
+      </div>
+
+      <!-- Add New Job Card -->
+      <div class="card" style="margin-bottom: 1.5rem; background: rgba(255, 255, 255, 0.03);">
+        <h4 style="font-family: var(--font-heading); margin-bottom: 0.8rem; color: var(--accent-cyan);">+ Add New Job Opening</h4>
+        <div class="form-group">
+          <label class="form-label">Job Title</label>
+          <input type="text" id="new-job-title-input" class="form-control" placeholder="e.g. Senior Python Backend Developer">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Job Description & Requirements</label>
+          <textarea id="new-job-text-input" class="form-control" style="min-height: 100px;" placeholder="Paste job description, required skills (e.g. FastAPI, PostgreSQL, Docker), and responsibilities..."></textarea>
+        </div>
+        <div style="display:flex; justify-content: flex-end;">
+          <button class="btn btn-primary btn-sm" onclick="createNewJobOpening()">Create Job Opening</button>
+        </div>
+      </div>
+
+      <!-- Active Jobs List -->
+      <h4 style="font-family: var(--font-heading); margin-bottom: 0.8rem;">Current Active Job Openings</h4>
+      <div id="manage-jobs-list" style="display: flex; flex-direction: column; gap: 0.8rem; max-height: 360px; overflow-y: auto;">
+        <!-- Loaded dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. Confirmation Modal -->
+  <div class="modal-overlay" id="confirm-modal">
+    <div class="modal-dialog" style="max-width: 440px;">
+      <div class="modal-header">
+        <div class="modal-title" id="confirm-modal-title" style="color: var(--danger);">Confirm Action</div>
+        <button class="modal-close-btn">&times;</button>
+      </div>
+      <p id="confirm-modal-message" style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 1.5rem;">
+        Are you sure you want to proceed?
+      </p>
+      <div style="display: flex; justify-content: flex-end; gap: 0.8rem;">
+        <button class="btn btn-secondary btn-sm" onclick="closeModal('confirm-modal')">Cancel</button>
+        <button class="btn btn-danger btn-sm" id="btn-confirm-action">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 7. Escalation Email Modal -->
+  <div class="modal-overlay" id="escalation-email-modal">
+    <div class="modal-dialog" style="max-width: 600px;">
+      <div class="modal-header">
+        <div class="modal-title" style="display:flex; align-items:center; gap:0.5rem;">
+          <span>📧</span> Candidate Email Escalation
+        </div>
+        <button class="modal-close-btn">&times;</button>
+      </div>
+      <input type="hidden" id="email-modal-doc-id">
+      <div class="form-group">
+        <label class="form-label">Recipient Email</label>
+        <input type="email" id="email-modal-recipient" class="form-control" value="damayanthi.u@riscrm.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Escalation Reason / Notes</label>
+        <textarea id="email-modal-reason" class="form-control" style="min-height: 90px;" placeholder="Reason for escalation..."></textarea>
+      </div>
+      <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 0.85rem; margin-bottom: 1.2rem; font-size: 0.82rem; color: var(--text-muted);">
+        📎 <strong>Attachment:</strong> The candidate's original resume file from DMS storage will be attached automatically to this email.
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:0.6rem;">
+        <button class="btn btn-secondary btn-sm" onclick="closeModal('escalation-email-modal')">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="btn-send-escalation-email" onclick="submitEscalationEmail()">📧 Send Email with Resume Attached</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 8. Candidate Remarks & Recruiter Notes Modal -->
+  <div class="modal-overlay" id="candidate-remarks-modal">
+    <div class="modal-dialog" style="max-width: 680px;">
+      <div class="modal-header">
+        <div class="modal-title" style="display:flex; align-items:center; gap:0.5rem;">
+          <span>💬</span> Candidate Remarks & Recruiter Activity
+        </div>
+        <button class="modal-close-btn">&times;</button>
+      </div>
+
+      <!-- Candidate Header Banner -->
+      <div id="remarks-candidate-banner" style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:8px; padding:0.85rem 1.1rem; margin-bottom:1.2rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.6rem;">
+        <!-- Filled dynamically -->
+      </div>
+
+      <!-- Add New Remark Form -->
+      <div class="card" style="margin-bottom:1.3rem; background:rgba(255,255,255,0.02); border:1px solid var(--border-subtle); padding:1rem;">
+        <h4 style="font-family:var(--font-heading); margin-bottom:0.6rem; font-size:0.92rem; color:var(--accent-cyan); display:flex; align-items:center; gap:0.4rem;">
+          <span>✍️</span> Add Recruiter Remark / Notes
+        </h4>
+        <input type="hidden" id="remark-modal-doc-id">
+        <div class="form-group" style="margin-bottom:0.75rem;">
+          <textarea id="new-remark-textarea" class="form-control" style="min-height:75px;" placeholder="Type recruiter observations, interview feedback, candidate salary/notice details, follow-up remarks..."></textarea>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.6rem;">
+          <div style="display:flex; align-items:center; gap:0.5rem;">
+            <label for="new-remark-status" style="font-size:0.82rem; color:var(--text-muted); margin-bottom:0;">Update Status (Optional):</label>
+            <select id="new-remark-status" class="form-control" style="width:170px;">
+              <option value="">Keep Current Status</option>
+              <option value="reviewed">Reviewed</option>
+              <option value="contacted">Contacted</option>
+              <option value="shortlisted">Shortlisted</option>
+              <option value="hired">🎉 Mark as Hired</option>
+              <option value="rejected">Rejected / Closed</option>
+            </select>
+          </div>
+          <button type="button" class="btn btn-primary btn-sm" onclick="submitCandidateRemark()">💾 Save Remark</button>
+        </div>
+      </div>
+
+      <!-- Chronological Remarks Timeline -->
+      <h4 style="font-family:var(--font-heading); margin-bottom:0.8rem; font-size:0.95rem;">Chronological Remarks & Notes History</h4>
+      <div id="remarks-history-list" style="display:flex; flex-direction:column; gap:0.75rem; max-height:360px; overflow-y:auto; padding-right:4px;">
+        <!-- Loaded dynamically -->
+      </div>
+      <div style="display:flex; justify-content:flex-end; margin-top:1.2rem;">
+        <button class="btn btn-secondary btn-sm" onclick="closeModal('candidate-remarks-modal')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 9. IKM / RAG Builder Intelligence Modal -->
+  <div class="modal-overlay" id="ikm-rag-modal">
+    <div class="modal-dialog" style="max-width: 780px;">
+      <div class="modal-header">
+        <div class="modal-title" style="display:flex; align-items:center; gap:0.5rem;">
+          <span>⚡</span> Company IKM / RAG Builder Console
+        </div>
+        <button class="modal-close-btn">&times;</button>
+      </div>
+      
+      <p style="font-size: 0.84rem; color: var(--text-muted); margin-bottom: 1.2rem;">
+        Enterprise DMS Platform Engine & Advanced RAG Builder for resume scraping, Neo4j template extraction, and hybrid semantic retrieval.
+      </p>
+
+      <!-- Status Cards Grid -->
+      <div class="grid-3" style="gap: 0.8rem; margin-bottom: 1.2rem;">
+        <div class="card" style="padding: 0.9rem; background: rgba(255, 255, 255, 0.03);">
+          <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Server Status</div>
+          <div id="ikm-modal-status-text" style="font-size: 1.05rem; font-weight: 700; color: #10b981; margin-top: 0.3rem;">Checking...</div>
+          <div id="ikm-modal-url" style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.2rem; word-break: break-all;">http://16.113.145.53:8088</div>
+        </div>
+
+        <div class="card" style="padding: 0.9rem; background: rgba(255, 255, 255, 0.03);">
+          <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Authentication</div>
+          <div id="ikm-modal-auth-text" style="font-size: 1.05rem; font-weight: 700; color: #f59e0b; margin-top: 0.3rem;">Evaluating...</div>
+          <div id="ikm-modal-user" style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.2rem;">user: resume-screening</div>
+        </div>
+
+        <div class="card" style="padding: 0.9rem; background: rgba(255, 255, 255, 0.03);">
+          <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">AI Prompt Guard</div>
+          <div id="ikm-modal-guard-text" style="font-size: 1.05rem; font-weight: 700; color: var(--accent-cyan); margin-top: 0.3rem;">Active</div>
+          <div id="ikm-modal-service" style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.2rem;">dms-service v1.0.0</div>
+        </div>
+      </div>
+
+      <!-- Environment Notice -->
+      <div id="ikm-password-alert" style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: var(--radius-md); padding: 0.8rem 1rem; margin-bottom: 1.2rem; font-size: 0.82rem; color: #fde68a;">
+        <span style="font-weight: 700;">🔐 Credentials Management:</span> The server is running and reachable. Update <code style="background:rgba(0,0,0,0.3); padding:2px 6px; border-radius:4px; color:#fbbf24;">RAG_BUILDER_PASSWORD</code> in your <code style="background:rgba(0,0,0,0.3); padding:2px 6px; border-radius:4px; color:#fbbf24;">.env</code> file anytime; the platform automatically re-authenticates. High-precision local parsing engine is currently guaranteeing zero downtime.
+      </div>
+
+      <!-- Interactive Tools Navigation -->
+      <div style="display:flex; gap:0.5rem; margin-bottom:1rem; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:0.5rem;">
+        <button class="btn btn-sm btn-secondary" id="btn-ikm-tab-test" onclick="switchIKMTab('test')" style="font-weight:600;">🔑 Test Credentials</button>
+        <button class="btn btn-sm btn-secondary" id="btn-ikm-tab-search" onclick="switchIKMTab('search')" style="font-weight:600;">🔍 RAG Semantic Search</button>
+        <button class="btn btn-sm btn-secondary" id="btn-ikm-tab-chat" onclick="switchIKMTab('chat')" style="font-weight:600;">💬 RAG AI Assistant</button>
+      </div>
+
+      <!-- Tab A: Test Auth -->
+      <div id="ikm-tab-test-panel">
+        <div style="display:flex; gap:0.6rem; align-items:flex-end; flex-wrap:wrap; margin-bottom:0.8rem;">
+          <div style="flex:1; min-width:180px;">
+            <label class="form-label" style="font-size:0.75rem;">Username</label>
+            <input type="text" id="ikm-test-user-input" class="form-control" value="resume-screening">
+          </div>
+          <div style="flex:1; min-width:180px;">
+            <label class="form-label" style="font-size:0.75rem;">Password</label>
+            <input type="password" id="ikm-test-pass-input" class="form-control" placeholder="Enter updated password to test">
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="runIKMAuthTest()" style="height:38px;">Test Connection</button>
+        </div>
+        <div id="ikm-auth-test-result" style="display:none; font-size:0.82rem; padding:0.65rem 0.9rem; border-radius:var(--radius-md);"></div>
+      </div>
+
+      <!-- Tab B: RAG Semantic Search -->
+      <div id="ikm-tab-search-panel" style="display:none;">
+        <div style="display:flex; gap:0.6rem; margin-bottom:0.8rem;">
+          <input type="text" id="ikm-search-query-input" class="form-control" placeholder="e.g. Candidates with Docker, Kubernetes and microservices experience...">
+          <button class="btn btn-primary btn-sm" onclick="runIKMSearch()">Search</button>
+        </div>
+        <div id="ikm-search-results-list" style="max-height:240px; overflow-y:auto; display:flex; flex-direction:column; gap:0.6rem;">
+          <div style="font-size:0.82rem; color:var(--text-muted); text-align:center; padding:1.5rem 0;">Enter a natural query above to test hybrid RAG search against resume knowledge.</div>
+        </div>
+      </div>
+
+      <!-- Tab C: RAG Chat Assistant -->
+      <div id="ikm-tab-chat-panel" style="display:none;">
+        <div id="ikm-chat-messages" style="max-height:220px; overflow-y:auto; display:flex; flex-direction:column; gap:0.6rem; margin-bottom:0.8rem; padding:0.5rem; background:rgba(0,0,0,0.2); border-radius:var(--radius-md);">
+          <div style="font-size:0.82rem; color:var(--text-muted);">IKM RAG Assistant is ready. Ask questions about candidates, skill comparisons, or job alignment.</div>
+        </div>
+        <div style="display:flex; gap:0.6rem;">
+          <input type="text" id="ikm-chat-query-input" class="form-control" placeholder="Ask a question about candidates..." onkeypress="if(event.key==='Enter') runIKMChat()">
+          <button class="btn btn-primary btn-sm" onclick="runIKMChat()">Ask</button>
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; margin-top:1.2rem;">
+        <button class="btn btn-secondary btn-sm" onclick="closeModal('ikm-rag-modal')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container"></div>
+
+  <!-- Scripts -->
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

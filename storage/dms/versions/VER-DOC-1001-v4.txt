@@ -1,0 +1,2 @@
+Arun Kumar - Senior Backend Developer
+Skills: Python, FastAPI, PostgreSQL, Docker, PyTest
