@@ -291,14 +291,15 @@ def generate_word_resume(
 @router.post("/api/resumes/{doc_id}/open-in-word")
 def open_in_local_word(
     doc_id: str,
-    request: GenerateWordRequest,
+    request: Optional[GenerateWordRequest] = Body(default=None),
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Generates the improved .docx resume file and opens it directly in local Microsoft Word on Windows.
     """
-    res = generate_word_resume(doc_id, request, db, current_user)
+    req = request or GenerateWordRequest()
+    res = generate_word_resume(doc_id, req, db, current_user)
     version_id = res["version_id"]
     version_rec = db.query(ResumeVersion).filter(ResumeVersion.version_id == version_id).first()
     file_path = dms_adapter.get_file_path(version_rec.dms_ref) if version_rec else None

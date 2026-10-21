@@ -83,42 +83,151 @@ function closeModal(modalId) {
 // ==========================================
 // RESUME PREVIEW & SIDE NAVIGATION (< and >)
 // ==========================================
+function downloadCurrentPreviewDocument() {
+  let docId = null;
+  let filename = null;
+  if (AppState.previewList && AppState.previewList[AppState.previewIndex]) {
+    const item = AppState.previewList[AppState.previewIndex];
+    docId = item.doc_id || item.docId;
+    filename = item.original_filename || `${docId}.docx`;
+  } else if (window._currentImprovementData && window._currentImprovementData.doc_id) {
+    docId = window._currentImprovementData.doc_id;
+    filename = `${docId}.docx`;
+  }
+  if (!docId) {
+    showToast("No active document to download.", "warning");
+    return;
+  }
+
+  const downloadUrl = `/api/resumes/${encodeURIComponent(docId)}/file`;
+  const a = document.createElement("a");
+  a.href = downloadUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  showToast(`Downloading resume for candidate ${docId}...`, "info");
+}
+
+function downloadCandidateResume(docId) {
+  if (!docId) {
+    showToast("No candidate document ID provided.", "warning");
+    return;
+  }
+  const item = (AppState.resumes || []).find(r => r.doc_id === docId);
+  const filename = (item && item.original_filename) ? item.original_filename : `${docId}.docx`;
+  const downloadUrl = `/api/resumes/${encodeURIComponent(docId)}/file`;
+  const a = document.createElement("a");
+  a.href = downloadUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  showToast(`Downloading original resume for candidate ${docId}...`, "info");
+}
+
+function getMatchScopedPreviewList(includeDocId = null) {
+  const scoped = [];
+  (AppState.uploadedResumes || []).filter(r => r.doc_id).forEach(r => {
+    scoped.push({
+      doc_id: r.doc_id,
+      full_name: r.full_name || r.candidate_name || r.filename || r.doc_id,
+      original_filename: r.filename || `${r.doc_id}.docx`
+    });
+  });
+  AppState.selectedExistingMatchDocIds.forEach(id => {
+    if (!scoped.some(x => x.doc_id === id)) {
+      const r = (AppState.resumes || []).find(x => x.doc_id === id);
+      scoped.push({
+        doc_id: id,
+        full_name: r ? (r.full_name || r.candidate_name || r.pii?.name || r.original_filename || id) : id,
+        original_filename: r ? r.original_filename : `${id}.docx`
+      });
+    }
+  });
+  if (includeDocId && !scoped.some(x => x.doc_id === includeDocId)) {
+    const r = (AppState.resumes || []).find(x => x.doc_id === includeDocId);
+    scoped.push({
+      doc_id: includeDocId,
+      full_name: r ? (r.full_name || r.candidate_name || r.pii?.name || r.original_filename || includeDocId) : includeDocId,
+      original_filename: r ? r.original_filename : `${includeDocId}.docx`
+    });
+  }
+  return scoped;
+}
+
+function getImproveScopedPreviewList(includeDocId = null) {
+  const scoped = [];
+  (AppState.improveUploadedResumes || []).filter(r => r.doc_id).forEach(r => {
+    scoped.push({
+      doc_id: r.doc_id,
+      full_name: r.full_name || r.candidate_name || r.filename || r.doc_id,
+      original_filename: r.filename || `${r.doc_id}.docx`
+    });
+  });
+  AppState.selectedExistingImproveDocIds.forEach(id => {
+    if (!scoped.some(x => x.doc_id === id)) {
+      const r = (AppState.resumes || []).find(x => x.doc_id === id);
+      scoped.push({
+        doc_id: id,
+        full_name: r ? (r.full_name || r.candidate_name || r.pii?.name || r.original_filename || id) : id,
+        original_filename: r ? r.original_filename : `${id}.docx`
+      });
+    }
+  });
+  if (includeDocId && !scoped.some(x => x.doc_id === includeDocId)) {
+    const r = (AppState.resumes || []).find(x => x.doc_id === includeDocId);
+    scoped.push({
+      doc_id: includeDocId,
+      full_name: r ? (r.full_name || r.candidate_name || r.pii?.name || r.original_filename || includeDocId) : includeDocId,
+      original_filename: r ? r.original_filename : `${includeDocId}.docx`
+    });
+  }
+  return scoped;
+}
+
 function openResumePreview(docId, candidateList = null) {
   if (!docId) return;
 
-  // Derive candidate list context if not explicitly provided
+  // Build scoped candidate list based on current workflow context
   let list = candidateList;
   if (!list || !list.length) {
-    if (AppState.currentTab === "matching" && AppState.activeMatchResults?.results?.length) {
-      list = AppState.activeMatchResults.results.map(r => ({
-        doc_id: r.doc_id,
-        full_name: r.full_name || r.candidate_name || r.candidate_label || r.doc_id,
-        original_filename: r.doc_id
+    if (AppState.currentTab === "matching") {
+      list = getMatchScopedPreviewList(docId);
+    } else if (AppState.currentTab === "improvement") {
+      list = getImproveScopedPreviewList(docId);
+    } else if (AppState.currentTab === "followups" && AppState.allFollowups?.length) {
+      list = AppState.allFollowups.map(f => ({
+        doc_id: f.doc_id,
+        full_name: f.full_name || f.candidate_name || f.doc_id,
+        original_filename: f.doc_id
       }));
-    } else if (AppState.currentTab === "matching" && AppState.uploadedResumes.length) {
-      list = AppState.uploadedResumes.filter(r => r.doc_id).map(r => ({
-        doc_id: r.doc_id,
-        full_name: r.full_name || r.candidate_name || r.filename || r.doc_id,
-        original_filename: r.filename
-      }));
-    } else if (AppState.resumes?.length) {
+    } else if (AppState.currentTab === "library" && AppState.resumes?.length) {
       list = AppState.resumes.map(r => ({
         doc_id: r.doc_id,
         full_name: r.full_name || r.candidate_name || r.pii?.name || r.original_filename || r.doc_id,
         original_filename: r.original_filename
       }));
-    } else {
-      list = [{ doc_id: docId, full_name: docId, original_filename: docId }];
     }
   }
 
-  AppState.previewList = list;
+  if (!list || !list.length) {
+    const resumeObj = (AppState.resumes || []).find(r => r.doc_id === docId);
+    list = [{
+      doc_id: docId,
+      full_name: resumeObj ? (resumeObj.full_name || resumeObj.candidate_name || resumeObj.original_filename) : docId,
+      original_filename: resumeObj ? resumeObj.original_filename : docId
+    }];
+  }
+
   let idx = list.findIndex(item => (item.doc_id === docId || item.docId === docId));
   if (idx === -1) {
-    const resumeObj = AppState.resumes.find(r => r.doc_id === docId);
+    const resumeObj = (AppState.resumes || []).find(r => r.doc_id === docId);
     const fallbackName = resumeObj ? (resumeObj.full_name || resumeObj.candidate_name || resumeObj.original_filename) : docId;
-    AppState.previewList = [{ doc_id: docId, full_name: fallbackName, original_filename: docId }, ...list];
+    AppState.previewList = [{ doc_id: docId, full_name: fallbackName, original_filename: resumeObj?.original_filename || docId }];
     idx = 0;
+  } else {
+    AppState.previewList = list;
   }
 
   AppState.previewIndex = idx;
@@ -343,6 +452,10 @@ async function refreshDataCaches() {
       AppState.allFollowups = await API.getFollowups() || [];
     } catch (_) {}
     updateTabBadges();
+    renderMatchExistingResumes();
+    renderImproveExistingResumes();
+    updateMatchSelectedCountBadge();
+    updateImproveSelectedCountBadge();
     if (AppState.currentTab === "matching") {
       renderUploadedFilesList();
     }
@@ -453,6 +566,15 @@ function renderMatchExistingResumes() {
   const query = (searchInput?.value || "").toLowerCase().trim();
   const allResumes = AppState.resumes || [];
 
+  if (!AppState.resumes || !AppState.resumes.length) {
+    API.getResumes().then(res => {
+      if (res && res.length) {
+        AppState.resumes = res;
+        renderMatchExistingResumes();
+      }
+    }).catch(() => {});
+  }
+
   const filtered = allResumes.filter(r => {
     if (!query) return true;
     const name = (r.full_name || r.candidate_name || r.pii?.name || "").toLowerCase();
@@ -497,27 +619,34 @@ function renderMatchExistingResumes() {
           <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">(${escapeHtml(r.original_filename)})</span>
         </div>
       </div>
-      <button type="button" class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); openResumePreview('${r.doc_id}')" style="padding:0.2rem 0.5rem; font-size:0.72rem;">Preview</button>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); openResumePreview('${r.doc_id}', getMatchScopedPreviewList('${r.doc_id}'))" style="padding:0.2rem 0.5rem; font-size:0.72rem;">Preview</button>
     `;
     container.appendChild(itemEl);
   });
 }
 
 function toggleExpandExistingMatch() {
-  const container = document.getElementById("match-existing-collapsible");
-  const chevron = document.getElementById("match-existing-chevron");
+  const container = document.getElementById("match-existing-container") || document.getElementById("match-existing-collapsible");
+  const chevron = document.getElementById("match-expand-chevron") || document.getElementById("match-existing-chevron");
   if (!container) return;
   const isHidden = container.style.display === "none" || !container.style.display;
   container.style.display = isHidden ? "block" : "none";
   if (chevron) chevron.textContent = isHidden ? "▲" : "▼";
+  if (isHidden) {
+    renderMatchExistingResumes();
+  }
 }
 
 function updateMatchSelectedCountBadge() {
-  const badge = document.getElementById("match-selected-count-badge");
-  if (!badge) return;
   const count = AppState.selectedExistingMatchDocIds.size;
-  badge.textContent = `${count} selected`;
-  badge.style.display = count > 0 ? "inline-block" : "none";
+  const badge = document.getElementById("match-selected-count-badge");
+  if (badge) {
+    badge.textContent = count;
+  }
+  const countEl = document.getElementById("match-selected-count");
+  if (countEl) {
+    countEl.textContent = count;
+  }
 }
 
 function filterMatchExistingResumes() {
@@ -623,7 +752,7 @@ function renderUploadedFilesList() {
         </div>
       </div>
       <div style="display:flex; align-items:center; gap:0.5rem; flex-shrink:0;">
-        <button type="button" class="btn btn-secondary btn-sm" onclick="openResumePreview('${item.doc_id || ''}')" ${!item.doc_id ? 'disabled' : ''} title="Preview Resume" style="font-size:0.75rem; padding:0.25rem 0.6rem; border-radius:var(--radius-sm);">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="openResumePreview('${item.doc_id || ''}', getMatchScopedPreviewList('${item.doc_id || ''}'))" ${!item.doc_id ? 'disabled' : ''} title="Preview Resume" style="font-size:0.75rem; padding:0.25rem 0.6rem; border-radius:var(--radius-sm);">
           Preview
         </button>
         <button type="button" class="btn btn-danger btn-sm" onclick="removeUploadedResume('${item.doc_id || ''}', '${escapedFilename}', ${idx})" title="Remove this uploaded resume" style="font-size:0.75rem; padding:0.25rem 0.6rem; border-radius:var(--radius-sm); display:inline-flex; align-items:center; gap:0.25rem;">
@@ -947,29 +1076,6 @@ function renderMatchResults(data, evaluatedUploadedCount = null) {
   const container = document.getElementById("match-results-container");
   container.innerHTML = "";
 
-  // Scope indicator banner
-  if (evaluatedUploadedCount !== null) {
-    const scopeBanner = document.createElement("div");
-    scopeBanner.style.cssText = "display:flex; align-items:center; gap:0.6rem; padding:0.7rem 1.1rem; margin-bottom:1.2rem; background:rgba(6,182,212,0.1); border:1px solid rgba(6,182,212,0.3); border-radius:var(--radius-sm); color:var(--accent-cyan); font-size:0.86rem;";
-    scopeBanner.innerHTML = `
-      <span style="font-size:1.2rem;">🎯</span>
-      <div>
-        <strong>Search Scope: Selected Resumes</strong> &mdash; Evaluated <strong>${evaluatedUploadedCount}</strong> chosen candidate resume(s).
-      </div>
-    `;
-    container.appendChild(scopeBanner);
-  } else {
-    const scopeBanner = document.createElement("div");
-    scopeBanner.style.cssText = "display:flex; align-items:center; gap:0.6rem; padding:0.7rem 1.1rem; margin-bottom:1.2rem; background:rgba(99,102,241,0.1); border:1px solid rgba(99,102,241,0.25); border-radius:var(--radius-sm); color:var(--text-main); font-size:0.86rem;";
-    scopeBanner.innerHTML = `
-      <span style="font-size:1.2rem;">📚</span>
-      <div>
-        <strong>Search Scope: Entire Resume Library</strong> &mdash; Evaluated across all candidate resumes in the database.
-      </div>
-    `;
-    container.appendChild(scopeBanner);
-  }
-
   // Notice banner for fewer than requested
   if (data.notice) {
     const notice = document.createElement("div");
@@ -1032,10 +1138,12 @@ function renderMatchResults(data, evaluatedUploadedCount = null) {
           <button type="button" class="btn btn-secondary btn-sm" onclick="viewCandidateDetailsModal('${cand.doc_id}')" title="View candidate and contact details" style="padding:0.25rem 0.55rem; font-size:0.95rem; line-height:1;">👁️</button>
           <button type="button" class="btn btn-secondary btn-sm candidate-action-btn btn-action-shortlist ${currentStatus === 'shortlisted' ? 'active-shortlisted' : ''}" 
             onclick="toggleCandidateAction('${cand.doc_id}', 'shortlist', this)">Shortlist</button>
+          <button type="button" class="btn btn-secondary btn-sm candidate-action-btn btn-action-contacted ${currentStatus === 'contacted' ? 'active-contacted' : ''}" 
+            onclick="toggleCandidateAction('${cand.doc_id}', 'contacted', this)">Contacted</button>
+          <button type="button" class="btn btn-secondary btn-sm candidate-action-btn btn-action-reviewed ${currentStatus === 'reviewed' ? 'active-reviewed' : ''}" 
+            onclick="toggleCandidateAction('${cand.doc_id}', 'reviewed', this)">Mark Reviewed</button>
           <button type="button" class="btn btn-secondary btn-sm candidate-action-btn btn-action-snooze ${currentStatus === 'in_progress' || currentStatus === 'snooze' ? 'active-snoozed' : ''}" 
             onclick="toggleCandidateAction('${cand.doc_id}', 'snooze', this)">Snooze</button>
-          <button type="button" class="btn btn-secondary btn-sm candidate-action-btn btn-action-remark" 
-            onclick="toggleCandidateAction('${cand.doc_id}', 'remark', this)">Remark</button>
           <button type="button" class="btn btn-secondary btn-sm candidate-action-btn btn-action-hired ${currentStatus === 'hired' ? 'active-hired' : ''}" 
             onclick="toggleCandidateAction('${cand.doc_id}', 'hired', this)" title="Mark candidate as Hired">Hired</button>
         </div>
@@ -1049,6 +1157,11 @@ function renderMatchResults(data, evaluatedUploadedCount = null) {
 async function toggleCandidateAction(docId, actionType, buttonEl) {
   if (actionType === "remark") {
     openCandidateRemarksModal(docId);
+    return;
+  }
+
+  if (actionType === "snooze") {
+    openActionModal(docId, "snooze");
     return;
   }
 
@@ -1070,15 +1183,25 @@ async function toggleCandidateAction(docId, actionType, buttonEl) {
       backendActionType = "shortlisted";
       notes = "Candidate shortlisted";
     }
-  } else if (actionType === "snooze") {
-    if (currentStatus === "in_progress" || currentStatus === "snooze") {
+  } else if (actionType === "contacted") {
+    if (currentStatus === "contacted") {
       targetStatus = "pending_review";
       backendActionType = "reset";
-      notes = "Candidate un-snoozed and returned to review";
+      notes = "Candidate contacted status cleared";
     } else {
-      targetStatus = "in_progress";
-      backendActionType = "snooze";
-      notes = "Candidate snoozed for 7 days";
+      targetStatus = "contacted";
+      backendActionType = "contacted";
+      notes = "Candidate contacted";
+    }
+  } else if (actionType === "reviewed") {
+    if (currentStatus === "reviewed") {
+      targetStatus = "pending_review";
+      backendActionType = "reset";
+      notes = "Reviewed status cleared";
+    } else {
+      targetStatus = "reviewed";
+      backendActionType = "reviewed";
+      notes = "Candidate marked as reviewed";
     }
   } else if (actionType === "hired") {
     if (currentStatus === "hired") {
@@ -1099,10 +1222,14 @@ async function toggleCandidateAction(docId, actionType, buttonEl) {
     const group = document.getElementById(`actions-group-${docId}`);
     if (group) {
       const btnShortlist = group.querySelector(".btn-action-shortlist");
+      const btnContacted = group.querySelector(".btn-action-contacted");
+      const btnReviewed = group.querySelector(".btn-action-reviewed");
       const btnSnooze = group.querySelector(".btn-action-snooze");
       const btnHired = group.querySelector(".btn-action-hired");
 
       if (btnShortlist) btnShortlist.classList.toggle("active-shortlisted", targetStatus === "shortlisted");
+      if (btnContacted) btnContacted.classList.toggle("active-contacted", targetStatus === "contacted");
+      if (btnReviewed) btnReviewed.classList.toggle("active-reviewed", targetStatus === "reviewed");
       if (btnSnooze) btnSnooze.classList.toggle("active-snoozed", targetStatus === "in_progress" || targetStatus === "snooze");
       if (btnHired) btnHired.classList.toggle("active-hired", targetStatus === "hired");
     }
@@ -1263,6 +1390,15 @@ function renderImproveExistingResumes() {
   const query = (searchInput?.value || "").toLowerCase().trim();
   const allResumes = AppState.resumes || [];
 
+  if (!AppState.resumes || !AppState.resumes.length) {
+    API.getResumes().then(res => {
+      if (res && res.length) {
+        AppState.resumes = res;
+        renderImproveExistingResumes();
+      }
+    }).catch(() => {});
+  }
+
   const filtered = allResumes.filter(r => {
     if (!query) return true;
     const name = (r.full_name || r.candidate_name || r.pii?.name || "").toLowerCase();
@@ -1272,10 +1408,13 @@ function renderImproveExistingResumes() {
   });
 
   const selectedResume = allResumes.find(r => r.doc_id === AppState.selectedResumeDocId);
+  const selectedCount = AppState.selectedExistingImproveDocIds.size;
   if (selectedNameEl) {
-    selectedNameEl.textContent = selectedResume 
-      ? (selectedResume.full_name || selectedResume.candidate_name || selectedResume.doc_id)
-      : (AppState.selectedExistingImproveDocIds.size > 0 ? `${AppState.selectedExistingImproveDocIds.size} Selected` : "None Selected");
+    selectedNameEl.textContent = selectedCount > 0 ? `${selectedCount} Selected` : "None Selected";
+  }
+  const countEl = document.getElementById("improve-selected-count");
+  if (countEl) {
+    countEl.textContent = selectedCount;
   }
 
   if (selectAllCb) {
@@ -1304,7 +1443,7 @@ function renderImproveExistingResumes() {
     itemEl.className = `existing-resume-item ${isCurrentActive || isChecked ? "selected" : ""}`;
     itemEl.innerHTML = `
       <input type="checkbox" ${isChecked ? "checked" : ""} onchange="toggleImproveExistingResume('${r.doc_id}', this.checked)" style="cursor:pointer;" onclick="event.stopPropagation()">
-      <div style="flex:1; min-width:0; overflow:hidden;" onclick="selectResumeForImprovement('${r.doc_id}')">
+      <div style="flex:1; min-width:0; overflow:hidden;" onclick="toggleImproveExistingResume('${r.doc_id}', ${!isChecked})">
         <div style="font-weight:600; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
           ${escapeHtml(displayName)}
         </div>
@@ -1313,27 +1452,38 @@ function renderImproveExistingResumes() {
           <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">(${escapeHtml(r.original_filename)})</span>
         </div>
       </div>
-      <button type="button" class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); openResumePreview('${r.doc_id}')" style="padding:0.2rem 0.5rem; font-size:0.72rem;">Preview</button>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); openResumePreview('${r.doc_id}', getImproveScopedPreviewList('${r.doc_id}'))" style="padding:0.2rem 0.5rem; font-size:0.72rem;">Preview</button>
     `;
     container.appendChild(itemEl);
   });
 }
 
 function toggleExpandExistingImprove() {
-  const container = document.getElementById("improve-existing-collapsible");
-  const chevron = document.getElementById("improve-existing-chevron");
+  const container = document.getElementById("improve-existing-container") || document.getElementById("improve-existing-collapsible");
+  const chevron = document.getElementById("improve-expand-chevron") || document.getElementById("improve-existing-chevron");
   if (!container) return;
   const isHidden = container.style.display === "none" || !container.style.display;
   container.style.display = isHidden ? "block" : "none";
   if (chevron) chevron.textContent = isHidden ? "▲" : "▼";
+  if (isHidden) {
+    renderImproveExistingResumes();
+  }
 }
 
 function updateImproveSelectedCountBadge() {
   const badge = document.getElementById("improve-selected-count-badge");
-  if (!badge) return;
-  const count = AppState.selectedExistingImproveDocIds.size + (AppState.improveUploadedResumes ? AppState.improveUploadedResumes.length : 0);
-  badge.textContent = `${count} selected`;
-  badge.style.display = count > 0 ? "inline-block" : "none";
+  const count = AppState.selectedExistingImproveDocIds.size;
+  if (badge) {
+    badge.textContent = count;
+  }
+  const countEl = document.getElementById("improve-selected-count");
+  if (countEl) {
+    countEl.textContent = count;
+  }
+  const selectedNameEl = document.getElementById("improve-selected-name");
+  if (selectedNameEl) {
+    selectedNameEl.textContent = count > 0 ? `${count} Selected` : "None Selected";
+  }
 }
 
 function filterImproveExistingResumes() {
@@ -1368,21 +1518,35 @@ function toggleImproveExistingResume(docId, checked) {
 }
 
 function toggleSelectAllImproveExisting(checked) {
+  const searchInput = document.getElementById("improve-existing-search");
+  const query = (searchInput?.value || "").toLowerCase().trim();
   const allResumes = AppState.resumes || [];
-  allResumes.forEach(r => {
+
+  const filtered = allResumes.filter(r => {
+    if (!query) return true;
+    const name = (r.full_name || r.candidate_name || r.pii?.name || "").toLowerCase();
+    const docId = (r.doc_id || "").toLowerCase();
+    const filename = (r.original_filename || "").toLowerCase();
+    return name.includes(query) || docId.includes(query) || filename.includes(query);
+  });
+
+  filtered.forEach(r => {
     if (checked) {
       AppState.selectedExistingImproveDocIds.add(r.doc_id);
     } else {
       AppState.selectedExistingImproveDocIds.delete(r.doc_id);
     }
   });
-  if (checked && allResumes.length > 0) {
-    AppState.selectedResumeDocId = allResumes[0].doc_id;
+
+  if (checked && filtered.length > 0) {
+    AppState.selectedResumeDocId = filtered[0].doc_id;
   } else if (!checked) {
     AppState.selectedResumeDocId = null;
   }
+
   const sel = document.getElementById("improve-resume-select");
   if (sel) sel.value = AppState.selectedResumeDocId || "";
+
   renderImproveExistingResumes();
   updateImproveSelectedCountBadge();
   renderImproveCandidatePersonalDetails();
@@ -1417,7 +1581,7 @@ function renderImproveUploadedFilesList() {
         </div>
       </div>
       <div style="display:flex; align-items:center; gap:0.5rem; flex-shrink:0;">
-        <button type="button" class="btn btn-secondary btn-sm" onclick="openResumePreview('${item.doc_id || ''}')" ${!item.doc_id ? 'disabled' : ''} style="font-size:0.75rem; padding:0.25rem 0.6rem;">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="openResumePreview('${item.doc_id || ''}', getImproveScopedPreviewList('${item.doc_id || ''}'))" ${!item.doc_id ? 'disabled' : ''} style="font-size:0.75rem; padding:0.25rem 0.6rem;">
           Preview
         </button>
         <button type="button" class="btn btn-danger btn-sm" onclick="removeImproveUploadedResume(${idx})" style="font-size:0.75rem; padding:0.25rem 0.6rem; border-radius:var(--radius-sm);">
@@ -1734,7 +1898,6 @@ async function runResumeImprovementAnalysis() {
     return;
   }
 
-  const primaryDocId = docIdArray[0];
   const jobId = document.getElementById("improve-job-select")?.value || null;
   const customJd = document.getElementById("improve-custom-jd")?.value.trim() || null;
   const btnStart = document.getElementById("btn-start-improvement");
@@ -1753,13 +1916,33 @@ async function runResumeImprovementAnalysis() {
   if (loadingIndicator) loadingIndicator.style.display = "flex";
   if (container) container.innerHTML = "";
 
-  const personalDetails = AppState.candidatePersonalDetails[primaryDocId] || null;
+  AppState.improvementAnalysesByDocId = AppState.improvementAnalysesByDocId || {};
 
   try {
-    const analysis = await API.analyzeImprovement(primaryDocId, jobId, jobId ? null : customJd, personalDetails);
-    renderImprovementAnalysis(analysis);
-    showToast("Resume improvement recommendations generated!", "success");
-    loadVersionHistory(primaryDocId);
+    const total = docIdArray.length;
+    for (let i = 0; i < total; i++) {
+      const docId = docIdArray[i];
+      const personalDetails = AppState.candidatePersonalDetails[docId] || null;
+      if (loadingIndicator) {
+        const titleEl = loadingIndicator.querySelector("div:nth-child(2)");
+        if (titleEl) {
+          titleEl.textContent = total > 1
+            ? `Analyzing Candidate ${i + 1} of ${total}: ${personalDetails?.name || docId}...`
+            : "Analyzing Resume Gaps & Aligning Requirements...";
+        }
+      }
+      const analysis = await API.analyzeImprovement(docId, jobId, jobId ? null : customJd, personalDetails);
+      AppState.improvementAnalysesByDocId[docId] = analysis;
+    }
+
+    AppState.activeImprovementDocId = docIdArray[0];
+    renderImprovementWorkspace(docIdArray);
+    showToast(
+      total > 1
+        ? `Improvement recommendations generated for ${total} candidates!`
+        : "Resume improvement recommendations generated!",
+      "success"
+    );
 
     // Automatic scroll down smoothly to results section
     if (container) {
@@ -1777,7 +1960,78 @@ async function runResumeImprovementAnalysis() {
   }
 }
 
-function renderImprovementAnalysis(data) {
+function renderImprovementWorkspace(docIdArray = null) {
+  const container = document.getElementById("improvement-results-area");
+  if (!container) return;
+
+  const docIds = docIdArray || Object.keys(AppState.improvementAnalysesByDocId || {});
+  if (!docIds.length) return;
+
+  if (!AppState.activeImprovementDocId || !docIds.includes(AppState.activeImprovementDocId)) {
+    AppState.activeImprovementDocId = docIds[0];
+  }
+
+  let tabsHtml = "";
+  if (docIds.length > 1) {
+    tabsHtml = `
+      <div class="card" style="margin-bottom: 1rem; padding: 0.75rem 1rem;">
+        <div style="font-size:0.75rem; text-transform:uppercase; font-weight:700; color:var(--text-dim); margin-bottom:0.5rem;">
+          Selected Candidates (${docIds.length}) &bull; Review &amp; Edit Each Candidate Independently
+        </div>
+        <div class="improve-cand-tabs" style="display:flex; gap:0.5rem; overflow-x:auto; padding-bottom:4px;">
+          ${docIds.map(id => {
+            const analysis = AppState.improvementAnalysesByDocId[id];
+            const pii = AppState.candidatePersonalDetails[id];
+            const resumeObj = (AppState.resumes || []).find(r => r.doc_id === id);
+            const name = pii?.name || resumeObj?.full_name || resumeObj?.candidate_name || id;
+            const score = analysis?.internal_match_score ?? "-";
+            const isActive = id === AppState.activeImprovementDocId;
+            return `
+              <button type="button" class="btn ${isActive ? 'btn-primary' : 'btn-secondary'} btn-sm" onclick="switchImprovementCandidate('${id}')" style="white-space:nowrap; display:flex; align-items:center; gap:0.4rem;">
+                <span>${escapeHtml(name)}</span>
+                <span class="file-status-badge badge-ready" style="font-size:0.68rem; padding:1px 5px;">${score} pts</span>
+              </button>
+            `;
+          }).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  container.innerHTML = `
+    ${tabsHtml}
+    <div id="active-candidate-analysis-area"></div>
+  `;
+
+  const activeAnalysis = AppState.improvementAnalysesByDocId[AppState.activeImprovementDocId];
+  if (activeAnalysis) {
+    const targetArea = document.getElementById("active-candidate-analysis-area");
+    renderImprovementAnalysis(activeAnalysis, targetArea);
+    loadVersionHistory(AppState.activeImprovementDocId);
+  }
+}
+
+function switchImprovementCandidate(newDocId) {
+  if (!newDocId || newDocId === AppState.activeImprovementDocId) return;
+
+  // Persist current editor modifications into memory
+  if (AppState.activeImprovementDocId && AppState.improvementAnalysesByDocId[AppState.activeImprovementDocId]) {
+    const canvas = document.getElementById("word-editor-canvas");
+    if (canvas && canvas.dataset.userEdited === "true") {
+      AppState.improvementAnalysesByDocId[AppState.activeImprovementDocId].improved_resume_text = canvas.innerHTML;
+    }
+    const summaryInput = document.getElementById("version-change-summary");
+    if (summaryInput) {
+      AppState.improvementAnalysesByDocId[AppState.activeImprovementDocId].change_summary = summaryInput.value;
+    }
+  }
+
+  AppState.activeImprovementDocId = newDocId;
+  const docIds = Object.keys(AppState.improvementAnalysesByDocId || {});
+  renderImprovementWorkspace(docIds);
+}
+
+function renderImprovementAnalysis(data, containerEl = null) {
   window._currentImprovementData = data;
   window._candidateDecisions = {};
 
@@ -1798,23 +2052,40 @@ function renderImprovementAnalysis(data) {
     window._candidateDecisions[c.id] = c.status || "pending";
   });
 
+  // Categorize actual changes for the summary breakdown
+  const summaryCat = {
+    summary: [],
+    experience: [],
+    skills: [],
+    other: []
+  };
+
+  changes.forEach(c => {
+    const sec = (c.section || "").toLowerCase();
+    if (sec.includes("summary") || sec.includes("profile") || sec.includes("objective")) {
+      summaryCat.summary.push(c);
+    } else if (sec.includes("experience") || sec.includes("work") || sec.includes("employment") || sec.includes("history")) {
+      summaryCat.experience.push(c);
+    } else if (sec.includes("skill") || sec.includes("competenc") || sec.includes("technolog")) {
+      summaryCat.skills.push(c);
+    } else {
+      summaryCat.other.push(c);
+    }
+  });
+
   if (data.candidate_personal_details) {
     const pd = data.candidate_personal_details;
-    const n = document.getElementById("improve-cand-name");
-    const r = document.getElementById("improve-cand-role");
-    const p = document.getElementById("improve-cand-phone");
-    const e = document.getElementById("improve-cand-email");
-    const l = document.getElementById("improve-cand-location");
-    const lk = document.getElementById("improve-cand-links");
-    if (n && pd.name && !n.value) n.value = pd.name;
-    if (r && pd.role && !r.value) r.value = pd.role;
-    if (p && pd.phone && !p.value) p.value = pd.phone;
-    if (e && pd.email && !e.value) e.value = pd.email;
-    if (l && pd.location && !l.value) l.value = pd.location;
-    if (lk && pd.links && !lk.value) lk.value = pd.links;
+    const docId = data.doc_id;
+    const keys = ["name", "role", "phone", "email", "location", "links"];
+    keys.forEach(k => {
+      const inp = document.getElementById(`inp-${docId}-${k}`) || document.getElementById(`improve-cand-${k}`);
+      if (inp && pd[k] && !inp.value) inp.value = pd[k];
+    });
   }
 
-  const container = document.getElementById("improvement-results-area");
+  const container = containerEl || document.getElementById("active-candidate-analysis-area") || document.getElementById("improvement-results-area");
+  if (!container) return;
+
   container.innerHTML = `
     <!-- Top Alignment & Score Recalculator Banner -->
     <div class="improvement-score-banner" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:1.25rem; margin-bottom:1.25rem;">
@@ -1849,6 +2120,37 @@ function renderImprovementAnalysis(data) {
     <div id="score-recalculation-box" style="background:var(--bg-surface-subtle); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:0.75rem 1rem; margin-bottom:1.25rem; font-size:0.82rem; color:var(--text-main);">
       <strong style="color:var(--primary);">Dynamic Score Impact:</strong>
       <span id="score-recalculation-explanation">Review suggested changes below. Accepting verified modifications genuinely recalculates the candidate match score.</span>
+    </div>
+
+    <!-- 2.1 Categorized Resume Changes Summary (Ground Truth Evidence) -->
+    <div class="card" style="margin-bottom:1.25rem; border:1px solid var(--border-subtle); background:var(--bg-surface-subtle); padding:1rem;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.6rem;">
+        <h4 style="font-family:var(--font-heading); font-size:0.95rem; font-weight:700; margin:0; color:var(--text-main);">
+          📋 Resume Changes Summary (${changes.length} Modifications Grounded in Evidence)
+        </h4>
+        <span class="file-status-badge badge-ready" style="font-size:0.72rem;">✓ Fact-Grounded / No Fabrication</span>
+      </div>
+      <p style="font-size:0.78rem; color:var(--text-muted); margin-bottom:0.75rem;">
+        Summary of actual differences between the original candidate document and recommended target role optimizations:
+      </p>
+      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:0.65rem;">
+        <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:0.65rem 0.8rem; font-size:0.8rem;">
+          <div style="font-weight:700; color:var(--text-main); margin-bottom:3px;">Professional Summary</div>
+          <div style="color:var(--text-dim); font-size:0.74rem;">${summaryCat.summary.length ? `${summaryCat.summary.length} section(s) updated to match target role requirements.` : 'Original summary retained without modification.'}</div>
+        </div>
+        <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:0.65rem 0.8rem; font-size:0.8rem;">
+          <div style="font-weight:700; color:var(--text-main); margin-bottom:3px;">Skills Reorganization</div>
+          <div style="color:var(--text-dim); font-size:0.74rem;">${summaryCat.skills.length ? `${summaryCat.skills.length} core competencies reorganized and prioritized.` : 'Existing verified skill sets retained.'}</div>
+        </div>
+        <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:0.65rem 0.8rem; font-size:0.8rem;">
+          <div style="font-weight:700; color:var(--text-main); margin-bottom:3px;">Work Experience Descriptions</div>
+          <div style="color:var(--text-dim); font-size:0.74rem;">${summaryCat.experience.length ? `${summaryCat.experience.length} bullet description(s) improved with impact STAR verbs.` : 'Work experience statements preserved.'}</div>
+        </div>
+        <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:0.65rem 0.8rem; font-size:0.8rem;">
+          <div style="font-weight:700; color:var(--text-main); margin-bottom:3px;">Formatting &amp; Wording</div>
+          <div style="color:var(--text-dim); font-size:0.74rem;">${summaryCat.other.length ? `${summaryCat.other.length} phrasing and layout refinements applied.` : 'Original document layout preserved.'}</div>
+        </div>
+      </div>
     </div>
 
     <!-- Review Decision Actions Bar -->
@@ -1938,11 +2240,11 @@ function renderImprovementAnalysis(data) {
       </div>
     </div>
 
-    <!-- Word-Like Document Editor & Export -->
+    <!-- 2.2 Word-Compatible Document Editor & Export Section -->
     <div class="card" style="margin-top:1.5rem;">
       <h3 style="font-family:var(--font-heading); font-size:1.05rem; margin-bottom:0.4rem;">Approved Resume Revision & Export</h3>
       <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.85rem;">
-        Edit paragraphs, apply formatting, and insert images before exporting to Microsoft Word (.docx).
+        Edit paragraphs, apply formatting, change font sizes, and insert tables/images before exporting to Microsoft Word (.docx).
       </p>
       <div class="form-group">
         <label class="form-label" style="font-size:0.78rem;">Version Change Summary</label>
@@ -1955,11 +2257,23 @@ function renderImprovementAnalysis(data) {
         <button type="button" class="word-toolbar-btn" onclick="formatEditorDoc('italic')" title="Italic (Ctrl+I)"><i>I</i></button>
         <button type="button" class="word-toolbar-btn" onclick="formatEditorDoc('underline')" title="Underline (Ctrl+U)"><u>U</u></button>
         <div class="word-toolbar-divider"></div>
-        <select class="word-toolbar-select" onchange="formatEditorHeading(this.value)">
+        <select class="word-toolbar-select" onchange="formatEditorHeading(this.value)" title="Paragraph Style">
           <option value="p">Paragraph</option>
           <option value="h1">Heading 1</option>
           <option value="h2">Heading 2</option>
           <option value="h3">Heading 3</option>
+        </select>
+        <select class="word-toolbar-select" onchange="formatEditorFontSize(this.value)" title="Font Size">
+          <option value="">Font Size</option>
+          <option value="9pt">9 pt</option>
+          <option value="10pt">10 pt</option>
+          <option value="10.5pt">10.5 pt</option>
+          <option value="11pt" selected>11 pt</option>
+          <option value="12pt">12 pt</option>
+          <option value="14pt">14 pt</option>
+          <option value="16pt">16 pt</option>
+          <option value="18pt">18 pt</option>
+          <option value="24pt">24 pt</option>
         </select>
         <div class="word-toolbar-divider"></div>
         <button type="button" class="word-toolbar-btn" onclick="formatEditorDoc('justifyLeft')" title="Align Left">&#9664;</button>
@@ -1969,8 +2283,12 @@ function renderImprovementAnalysis(data) {
         <button type="button" class="word-toolbar-btn" onclick="formatEditorDoc('insertUnorderedList')" title="Bullet List">&bull; List</button>
         <button type="button" class="word-toolbar-btn" onclick="formatEditorDoc('insertOrderedList')" title="Numbered List">1. List</button>
         <div class="word-toolbar-divider"></div>
+        <button type="button" class="word-toolbar-btn" onclick="insertTableIntoWordEditor()" title="Insert Table">⊞ Table</button>
+        <button type="button" class="word-toolbar-btn" onclick="addTableRowToWordEditor()" title="Add Row to Table">+ Row</button>
+        <button type="button" class="word-toolbar-btn" onclick="deleteTableRowFromWordEditor()" title="Delete Row from Table">- Row</button>
+        <div class="word-toolbar-divider"></div>
         <button type="button" class="word-toolbar-btn" onclick="document.getElementById('word-image-upload-input').click()" title="Insert Image into Document">
-          📷 Insert Image
+          📷 Image
         </button>
         <input type="file" id="word-image-upload-input" accept="image/*" style="display:none;" onchange="insertImageIntoWordEditor(this)">
         <button type="button" class="word-toolbar-btn" onclick="formatEditorDoc('removeFormat')" title="Clear Formatting">✕ Clear</button>
@@ -1990,6 +2308,9 @@ function renderImprovementAnalysis(data) {
           🔄 Compare Versions
         </button>
         <div style="display:flex; gap:0.6rem; flex-wrap:wrap;">
+          <button type="button" class="btn btn-secondary" id="btn-save-draft" onclick="saveRevisedVersionDraft('${data.doc_id}')">
+            💾 Save Draft
+          </button>
           <button type="button" class="btn btn-secondary" id="btn-open-local-word" onclick="openResumeInLocalWord('${data.doc_id}')">
             🖥️ Open in Local Word
           </button>
@@ -2005,6 +2326,48 @@ function renderImprovementAnalysis(data) {
   applyPersonalDetailsToDraft(false);
 }
 
+function applyPersonalDetailsToDraft(showToastNotice = false) {
+  const docId = AppState.activeImprovementDocId || window._currentImprovementData?.doc_id;
+  if (!docId) return;
+
+  const details = AppState.candidatePersonalDetails[docId] || window._currentImprovementData?.candidate_personal_details || {};
+  const canvas = document.getElementById("word-editor-canvas");
+  if (!canvas) return;
+
+  const keys = ["name", "role", "phone", "email", "location", "links"];
+  keys.forEach(k => {
+    const inp = document.getElementById(`inp-${docId}-${k}`) || document.getElementById(`improve-cand-${k}`);
+    if (inp && details[k] && !inp.value) {
+      inp.value = details[k];
+    }
+  });
+
+  const name = details.name || "";
+  const role = details.role || "";
+  const phone = details.phone || "";
+  const email = details.email || "";
+  const loc = details.location || "";
+  const links = details.links || "";
+
+  const contactParts = [phone, email, loc, links].filter(Boolean).join(" | ");
+
+  const currentText = canvas.innerText || "";
+  if (name && !currentText.includes(name) && !canvas.dataset.userEdited) {
+    let headerHtml = `<div class="resume-header-block" style="text-align:center; margin-bottom:1.2rem; border-bottom:1px solid #ccc; padding-bottom:0.75rem;">`;
+    headerHtml += `<h1 style="font-size:1.6rem; font-weight:700; margin:0 0 0.25rem 0;">${escapeHtml(name)}</h1>`;
+    if (role) headerHtml += `<div style="font-size:1.05rem; font-weight:600; color:#444; margin-bottom:0.25rem;">${escapeHtml(role)}</div>`;
+    if (contactParts) headerHtml += `<div style="font-size:0.85rem; color:#666;">${escapeHtml(contactParts)}</div>`;
+    headerHtml += `</div>`;
+
+    canvas.innerHTML = headerHtml + canvas.innerHTML;
+    syncEditorToTextarea();
+  }
+
+  if (showToastNotice) {
+    showToast("Candidate contact details applied to draft.", "info");
+  }
+}
+
 function formatEditorDoc(command, value = null) {
   document.execCommand(command, false, value);
   syncEditorToTextarea();
@@ -2017,6 +2380,85 @@ function formatEditorHeading(tag) {
     document.execCommand('formatBlock', false, `<${tag}>`);
   }
   syncEditorToTextarea();
+}
+
+function formatEditorFontSize(size) {
+  if (!size) return;
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return;
+  const range = sel.getRangeAt(0);
+  const selectedText = range.toString();
+  if (!selectedText) {
+    document.execCommand("fontSize", false, size === "18pt" || size === "24pt" ? "5" : size === "14pt" || size === "16pt" ? "4" : "3");
+    syncEditorToTextarea();
+    return;
+  }
+  const span = document.createElement("span");
+  span.style.fontSize = size;
+  span.textContent = selectedText;
+  range.deleteContents();
+  range.insertNode(span);
+  syncEditorToTextarea();
+}
+
+function insertTableIntoWordEditor(rows = 3, cols = 3) {
+  const canvas = document.getElementById("word-editor-canvas");
+  if (!canvas) return;
+  canvas.focus();
+  let tableHtml = `<table style="width:100%; border-collapse:collapse; margin:0.75rem 0; border:1px solid var(--border-subtle);"><tbody>`;
+  for (let r = 0; r < rows; r++) {
+    tableHtml += `<tr>`;
+    for (let c = 0; c < cols; c++) {
+      if (r === 0) {
+        tableHtml += `<th style="border:1px solid var(--border-subtle); padding:6px 10px; background:var(--bg-surface-subtle); font-weight:600; text-align:left;">Header ${c + 1}</th>`;
+      } else {
+        tableHtml += `<td style="border:1px solid var(--border-subtle); padding:6px 10px;">Item ${r},${c + 1}</td>`;
+      }
+    }
+    tableHtml += `</tr>`;
+  }
+  tableHtml += `</tbody></table><p><br></p>`;
+  document.execCommand("insertHTML", false, tableHtml);
+  syncEditorToTextarea();
+  showToast("Table inserted into editor", "info");
+}
+
+function addTableRowToWordEditor() {
+  const canvas = document.getElementById("word-editor-canvas");
+  if (!canvas) return;
+  const tables = canvas.querySelectorAll("table");
+  if (!tables.length) {
+    insertTableIntoWordEditor(2, 2);
+    return;
+  }
+  const lastTable = tables[tables.length - 1];
+  const colCount = (lastTable.rows[0] && lastTable.rows[0].cells.length) || 2;
+  const newRow = lastTable.insertRow(-1);
+  for (let i = 0; i < colCount; i++) {
+    const newCell = newRow.insertCell(i);
+    newCell.style.border = "1px solid var(--border-subtle)";
+    newCell.style.padding = "6px 10px";
+    newCell.innerHTML = "New entry";
+  }
+  syncEditorToTextarea();
+  showToast("Row added to table", "info");
+}
+
+function deleteTableRowFromWordEditor() {
+  const canvas = document.getElementById("word-editor-canvas");
+  if (!canvas) return;
+  const tables = canvas.querySelectorAll("table");
+  if (!tables.length) return;
+  const lastTable = tables[tables.length - 1];
+  if (lastTable.rows.length > 1) {
+    lastTable.deleteRow(-1);
+    syncEditorToTextarea();
+    showToast("Row deleted from table", "info");
+  } else {
+    lastTable.remove();
+    syncEditorToTextarea();
+    showToast("Table removed", "info");
+  }
 }
 
 function insertImageIntoWordEditor(input) {
@@ -2081,6 +2523,20 @@ async function openResumeInLocalWord(docId) {
   }
 }
 
+AppState.compareBlocks = [];
+AppState.comparePageIndex = 0;
+AppState.comparePageSize = 25;
+
+function isTextSimilar(s1, s2) {
+  if (!s1 || !s2) return false;
+  const words1 = new Set(s1.toLowerCase().split(/\s+/));
+  const words2 = new Set(s2.toLowerCase().split(/\s+/));
+  let common = 0;
+  words1.forEach(w => { if (words2.has(w)) common++; });
+  const total = Math.max(words1.size, words2.size);
+  return total > 0 && (common / total) >= 0.35;
+}
+
 function openVersionComparisonModal() {
   if (!window._currentImprovementData) {
     showToast("No active resume revision to compare.", "warning");
@@ -2088,8 +2544,6 @@ function openVersionComparisonModal() {
   }
 
   const data = window._currentImprovementData;
-  const origBody = document.getElementById("compare-original-body");
-  const revBody = document.getElementById("compare-revised-body");
   const origBadge = document.getElementById("compare-original-badge");
   const revBadge = document.getElementById("compare-revised-badge");
 
@@ -2101,30 +2555,115 @@ function openVersionComparisonModal() {
   const canvas = document.getElementById("word-editor-canvas");
   const revisedText = canvas ? canvas.innerText : (data.improved_resume_text || originalText);
 
-  const origLines = originalText.split("\n").filter(l => l.trim().length > 0);
-  const revLines = revisedText.split("\n").filter(l => l.trim().length > 0);
+  const origLines = originalText.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+  const revLines = revisedText.split("\n").map(l => l.trim()).filter(l => l.length > 0);
 
-  // Side-by-side diff
-  const origHtml = origLines.map(line => {
-    const isPresent = revLines.some(rl => rl.trim() === line.trim());
-    if (!isPresent) {
-      return `<div style="margin-bottom:0.4rem;"><span class="diff-removed">${escapeHtml(line)}</span></div>`;
+  // Build mapping from changes for accurate modified pairing
+  const changePairs = new Map();
+  (data.changes || []).forEach(c => {
+    if (c.original_text && c.proposed_text) {
+      changePairs.set(c.original_text.trim(), c.proposed_text.trim());
     }
-    return `<div style="margin-bottom:0.4rem;">${escapeHtml(line)}</div>`;
-  }).join("");
+  });
 
-  const revHtml = revLines.map(line => {
-    const wasPresent = origLines.some(ol => ol.trim() === line.trim());
-    if (!wasPresent) {
-      return `<div style="margin-bottom:0.4rem;"><span class="diff-added">${escapeHtml(line)}</span></div>`;
+  const blocks = [];
+  let oIdx = 0;
+  let rIdx = 0;
+
+  while (oIdx < origLines.length || rIdx < revLines.length) {
+    const oLine = oIdx < origLines.length ? origLines[oIdx] : null;
+    const rLine = rIdx < revLines.length ? revLines[rIdx] : null;
+
+    if (oLine !== null && rLine !== null && oLine === rLine) {
+      blocks.push({ type: "unchanged", orig: oLine, rev: rLine });
+      oIdx++;
+      rIdx++;
+    } else if (oLine !== null && (changePairs.has(oLine) || (rLine !== null && isTextSimilar(oLine, rLine)))) {
+      blocks.push({
+        type: "modified",
+        orig: oLine,
+        rev: rLine || changePairs.get(oLine) || oLine
+      });
+      oIdx++;
+      rIdx++;
+    } else if (rLine !== null && !origLines.includes(rLine)) {
+      blocks.push({ type: "added", orig: null, rev: rLine });
+      rIdx++;
+    } else if (oLine !== null && !revLines.includes(oLine)) {
+      blocks.push({ type: "removed", orig: oLine, rev: null });
+      oIdx++;
+    } else {
+      blocks.push({ type: "modified", orig: oLine, rev: rLine });
+      if (oIdx < origLines.length) oIdx++;
+      if (rIdx < revLines.length) rIdx++;
     }
-    return `<div style="margin-bottom:0.4rem;">${escapeHtml(line)}</div>`;
-  }).join("");
+  }
+
+  AppState.compareBlocks = blocks;
+  AppState.comparePageIndex = 0;
+  renderComparePage(0);
+  openModal("version-compare-modal");
+}
+
+function renderComparePage(pageIdx) {
+  const blocks = AppState.compareBlocks || [];
+  const pageSize = AppState.comparePageSize || 25;
+  const totalPages = Math.ceil(blocks.length / pageSize) || 1;
+  const start = pageIdx * pageSize;
+  const end = Math.min(start + pageSize, blocks.length);
+  const pageBlocks = blocks.slice(start, end);
+
+  const origBody = document.getElementById("compare-original-body");
+  const revBody = document.getElementById("compare-revised-body");
+
+  let origHtml = "";
+  let revHtml = "";
+
+  pageBlocks.forEach(b => {
+    if (b.type === "unchanged") {
+      origHtml += `<div style="margin-bottom:0.45rem; line-height:1.45;">${escapeHtml(b.orig)}</div>`;
+      revHtml += `<div style="margin-bottom:0.45rem; line-height:1.45;">${escapeHtml(b.rev)}</div>`;
+    } else if (b.type === "modified") {
+      origHtml += `<div style="margin-bottom:0.45rem; line-height:1.45;"><span class="diff-removed">${escapeHtml(b.orig || "")}</span></div>`;
+      revHtml += `<div style="margin-bottom:0.45rem; line-height:1.45;"><span class="diff-modified">~ ${escapeHtml(b.rev || "")}</span></div>`;
+    } else if (b.type === "added") {
+      origHtml += `<div style="margin-bottom:0.45rem; min-height:1.2rem; color:transparent;">&nbsp;</div>`;
+      revHtml += `<div style="margin-bottom:0.45rem; line-height:1.45;"><span class="diff-added">+ ${escapeHtml(b.rev)}</span></div>`;
+    } else if (b.type === "removed") {
+      origHtml += `<div style="margin-bottom:0.45rem; line-height:1.45;"><span class="diff-removed">- ${escapeHtml(b.orig)}</span></div>`;
+      revHtml += `<div style="margin-bottom:0.45rem; min-height:1.2rem; color:transparent;">&nbsp;</div>`;
+    }
+  });
 
   if (origBody) origBody.innerHTML = origHtml || "<p class='text-dim'>Original resume text</p>";
   if (revBody) revBody.innerHTML = revHtml || "<p class='text-dim'>Revised resume text</p>";
 
-  openModal("version-compare-modal");
+  const pageControls = document.getElementById("compare-page-controls");
+  const pageCounter = document.getElementById("compare-page-counter");
+  const pagePrev = document.getElementById("compare-page-prev");
+  const pageNext = document.getElementById("compare-page-next");
+
+  if (pageControls) {
+    if (totalPages > 1) {
+      pageControls.style.display = "flex";
+      if (pageCounter) pageCounter.textContent = `Page ${pageIdx + 1} of ${totalPages}`;
+      if (pagePrev) pagePrev.disabled = (pageIdx <= 0);
+      if (pageNext) pageNext.disabled = (pageIdx >= totalPages - 1);
+    } else {
+      pageControls.style.display = "none";
+    }
+  }
+}
+
+function navigateComparePages(direction) {
+  const blocks = AppState.compareBlocks || [];
+  const pageSize = AppState.comparePageSize || 25;
+  const totalPages = Math.ceil(blocks.length / pageSize) || 1;
+  const nextIdx = AppState.comparePageIndex + direction;
+  if (nextIdx >= 0 && nextIdx < totalPages) {
+    AppState.comparePageIndex = nextIdx;
+    renderComparePage(nextIdx);
+  }
 }
 
 function onProposedTextEdited(changeId) {
@@ -2778,12 +3317,20 @@ async function submitCandidateRemark() {
   }
 }
 
-function openActionModal(docId) {
+function openActionModal(docId, defaultAction = "reviewed") {
   API.recordResumeOpened(docId).catch(() => {});
   document.getElementById("action-modal-doc-id").value = docId;
   const select = document.getElementById("action-type-select");
   if (select) {
-    select.value = "reviewed";
+    select.value = defaultAction;
+  }
+  const snoozeDaysInput = document.getElementById("snooze-days-input");
+  if (snoozeDaysInput) {
+    snoozeDaysInput.value = "7";
+  }
+  const notesInput = document.getElementById("action-notes-input");
+  if (notesInput) {
+    notesInput.value = "";
   }
   onActionTypeChange();
   openModal("record-action-modal");
@@ -2807,8 +3354,13 @@ async function submitRecordAction() {
   let nextActionAt = null;
   let statusVal = actionType;
   if (actionType === "snooze") {
+    const snoozeDaysInput = document.getElementById("snooze-days-input");
+    const snoozeDays = parseInt(snoozeDaysInput?.value, 10);
+    if (!snoozeDays || snoozeDays < 1) {
+      showToast("Please enter a valid positive number of snooze days (minimum 1)", "warning");
+      return;
+    }
     statusVal = "in_progress";
-    const snoozeDays = parseInt(document.getElementById("snooze-days-input")?.value, 10) || 7;
     const nextDate = new Date();
     nextDate.setDate(nextDate.getDate() + snoozeDays);
     nextActionAt = nextDate.toISOString();
@@ -2816,6 +3368,10 @@ async function submitRecordAction() {
     statusVal = "hired";
   } else if (actionType === "reviewed") {
     statusVal = "reviewed";
+  } else if (actionType === "contacted") {
+    statusVal = "contacted";
+  } else if (actionType === "shortlist" || actionType === "shortlisted") {
+    statusVal = "shortlisted";
   }
 
   const docIds = rawDocId.split(",").map(s => s.trim()).filter(Boolean);
@@ -2823,6 +3379,22 @@ async function submitRecordAction() {
   try {
     for (const docId of docIds) {
       await API.recordAction(docId, actionType, statusVal, notes, nextActionAt);
+      AppState.candidateActionStates[docId] = statusVal;
+
+      const group = document.getElementById(`actions-group-${docId}`);
+      if (group) {
+        const btnShortlist = group.querySelector(".btn-action-shortlist");
+        const btnContacted = group.querySelector(".btn-action-contacted");
+        const btnReviewed = group.querySelector(".btn-action-reviewed");
+        const btnSnooze = group.querySelector(".btn-action-snooze");
+        const btnHired = group.querySelector(".btn-action-hired");
+
+        if (btnShortlist) btnShortlist.classList.toggle("active-shortlisted", statusVal === "shortlisted");
+        if (btnContacted) btnContacted.classList.toggle("active-contacted", statusVal === "contacted");
+        if (btnReviewed) btnReviewed.classList.toggle("active-reviewed", statusVal === "reviewed");
+        if (btnSnooze) btnSnooze.classList.toggle("active-snoozed", statusVal === "in_progress" || statusVal === "snooze");
+        if (btnHired) btnHired.classList.toggle("active-hired", statusVal === "hired");
+      }
     }
     showToast(docIds.length > 1 ? `Recorded action "${actionType}" for ${docIds.length} candidate(s)` : (actionType === "hired" ? `Candidate ${docIds[0]} successfully marked as Hired` : `Recorded action "${actionType}" for ${docIds[0]}`), "success");
     closeModal("record-action-modal");
@@ -3324,7 +3896,10 @@ async function loadNotifications() {
       return;
     }
 
-    container.innerHTML = notifs.map(n => `
+    container.innerHTML = notifs.map(n => {
+      const cand = (AppState.resumes || []).find(r => r.doc_id === n.doc_id);
+      const candFullName = cand?.candidate_name || cand?.full_name || cand?.pii?.name || `Candidate ${n.doc_id}`;
+      return `
       <div class="card" style="border-left: 3px solid ${n.days_inactive >= 90 || n.severity === 'danger' ? 'var(--danger)' : 'var(--warning)'};">
         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; margin-bottom:0.5rem; flex-wrap:wrap;">
           <div>
@@ -3332,11 +3907,11 @@ async function loadNotifications() {
               <span class="file-status-badge ${n.days_inactive >= 90 ? 'badge-failed' : 'badge-processing'}">
                 ${n.days_inactive >= 90 ? '3+ Months Inactive' : 'Inactivity Notice'}
               </span>
-              <strong style="font-size:0.95rem; color:var(--text-main);">${escapeHtml(n.title)}</strong>
+              <strong style="font-size:0.95rem; color:var(--text-main);">${escapeHtml(candFullName)} &bull; ${escapeHtml(n.title)}</strong>
               ${!n.is_read ? '<span class="file-status-badge badge-ready" style="font-size:0.68rem; padding:1px 5px;">NEW</span>' : ''}
             </div>
             <div style="font-size:0.8rem; color:var(--text-dim); margin-top:0.25rem;">
-              Candidate: <strong>${n.doc_id}</strong> &bull; Inactive for <strong>${n.days_inactive} days</strong> &bull; Alert generated ${formatDate(n.created_at)}
+              Candidate: <strong style="color:var(--text-main);">${escapeHtml(candFullName)}</strong> <span style="font-size:0.75rem; color:var(--text-muted);">(${n.doc_id})</span> &bull; Inactive for <strong>${n.days_inactive} days</strong> &bull; Alert generated ${formatDate(n.created_at)}
             </div>
           </div>
           <div style="text-align:right;">
@@ -3366,14 +3941,16 @@ async function loadNotifications() {
           </div>
           <div style="display:flex; gap:0.4rem; align-items:center;">
             <button class="btn btn-secondary btn-sm" onclick="viewCandidateDetailsModal('${n.doc_id}')" title="View candidate and contact details" style="padding:0.25rem 0.5rem; font-size:0.95rem; line-height:1;">👁️</button>
-            <button class="btn btn-secondary btn-sm" onclick="viewOriginalResume('${n.doc_id}')">Original Resume</button>
+            <button class="btn btn-secondary btn-sm" onclick="openResumePreview('${n.doc_id}')" title="Preview Candidate Resume">Preview</button>
+            <button class="btn btn-secondary btn-sm" onclick="downloadCandidateResume('${n.doc_id}')" title="Download Candidate Resume">Download Resume</button>
             <button class="btn btn-secondary btn-sm" onclick="launchImprovementForCandidate('${n.doc_id}')">Improve Resume</button>
             ${!n.is_read ? `<button class="btn btn-secondary btn-sm" onclick="markNotificationAsRead('${n.id}')">Mark Read</button>` : ''}
             <button class="btn btn-danger btn-sm" onclick="confirmDeleteResume('${n.doc_id}', 'Candidate ${n.doc_id}')">Delete</button>
           </div>
         </div>
       </div>
-    `).join("");
+    `;
+    }).join("");
   } catch (err) {
     container.innerHTML = `<div class="card" style="color:var(--danger);">Error loading notifications: ${err.message}</div>`;
   }
@@ -3383,8 +3960,11 @@ function openEscalationEmailModal(docId, daysInactive, reason = null) {
   document.getElementById("email-modal-doc-id").value = docId;
   document.getElementById("email-modal-recipient").value = "damayanthi.u@riscrm.com";
   
+  const cand = (AppState.resumes || []).find(r => r.doc_id === docId);
+  const candFullName = cand?.candidate_name || cand?.full_name || cand?.pii?.name || `Candidate ${docId}`;
+
   const days = daysInactive || 90;
-  const reasonText = reason || `Candidate ${docId} has not had any recruiter action recorded for ${days} days (over 3 months review SLA). Please review the attached original resume for leadership decision or candidate re-engagement.`;
+  const reasonText = reason || `Candidate ${candFullName} (ID: ${docId}) has not had any recruiter action recorded for ${days} days (over 3 months review SLA). Please review the attached original resume for leadership decision or candidate re-engagement.`;
   document.getElementById("email-modal-reason").value = reasonText;
   
   openModal("escalation-email-modal");

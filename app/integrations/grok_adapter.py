@@ -120,7 +120,7 @@ class GrokAdapter:
                     ],
                     "temperature": 0.1
                 }
-                with httpx.Client(timeout=20.0) as client:
+                with httpx.Client(timeout=3.5) as client:
                     resp = client.post(f"{self.base_url}/chat/completions", headers=headers, json=payload)
                     if resp.status_code == 200:
                         content = resp.json()["choices"][0]["message"]["content"].strip()
@@ -650,8 +650,9 @@ class GrokAdapter:
 
         if summary_elem:
             orig = summary_elem.get("text", "")
+            target_role_clean = (target_job or "Technical Professional").replace('Target Position', 'Technical Professional')
             proposed = (
-                f"Results-oriented {target_role_clean := target_job.replace('Target Position', 'Technical Professional')} "
+                f"Results-oriented {target_role_clean} "
                 f"with verified expertise in {skills_str}. Proven track record designing resilient architectures, "
                 f"optimizing database queries, and accelerating engineering team delivery."
             )

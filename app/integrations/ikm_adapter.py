@@ -57,6 +57,14 @@ class BaseIKMAdapter(ABC):
         """Retrieves processing status from IKM."""
         pass
 
+    def download_document(self, ikm_ref: str) -> Optional[bytes]:
+        """Retrieves document binary from storage if supported."""
+        return None
+
+    def get_document_preview_data(self, ikm_ref: str) -> Optional[Dict[str, Any]]:
+        """Retrieves preview rendering from storage if supported."""
+        return None
+
 
 class LocalIKMAdapter(BaseIKMAdapter):
     """
@@ -534,6 +542,10 @@ class HttpIKMAdapter(BaseIKMAdapter):
         if self._access_token and time.time() < (self._token_expires_at - 60) and not force:
             return True
 
+        # Quick failure cooldown (30s) if remote host timed out or connection refused, preventing repetitive multi-second blocking
+        if not force and hasattr(self, "_last_failed_auth_time") and (time.time() - self._last_failed_auth_time < 30):
+            return False
+
         if not self.username:
             self._last_auth_error = "No RAG_BUILDER_USERNAME configured."
             return False
@@ -544,7 +556,7 @@ class HttpIKMAdapter(BaseIKMAdapter):
                 "user_id": self.username,
                 "password": self.password or ""
             }
-            resp = httpx.post(url, json=payload, timeout=min(self.timeout, 8.0))
+            resp = httpx.post(url, json=payload, timeout=min(self.timeout, 3.5))
             if resp.status_code == 200:
                 data = resp.json()
                 self._access_token = data.get("access_token")
@@ -556,14 +568,17 @@ class HttpIKMAdapter(BaseIKMAdapter):
             elif resp.status_code == 401:
                 self._last_auth_error = f"Authentication rejected (401: Invalid credentials). Please update RAG_BUILDER_PASSWORD in .env."
                 self._access_token = None
+                self._last_failed_auth_time = time.time()
                 return False
             else:
                 self._last_auth_error = f"Auth token endpoint returned HTTP {resp.status_code}: {resp.text[:150]}"
                 self._access_token = None
+                self._last_failed_auth_time = time.time()
                 return False
         except Exception as e:
             self._last_auth_error = f"Connection to RAG Builder ({self.base_url}) failed: {str(e)}"
             self._access_token = None
+            self._last_failed_auth_time = time.time()
             return False
 
     def get_health_status(self) -> Dict[str, Any]:
@@ -672,7 +687,7 @@ class HttpIKMAdapter(BaseIKMAdapter):
                 files=files,
                 data=data,
                 headers=self._get_headers(),
-                timeout=self.timeout
+                timeout=min(self.timeout, 4.0)
             )
             
             if resp.status_code == 200:
@@ -682,10 +697,10 @@ class HttpIKMAdapter(BaseIKMAdapter):
                     remote_doc_id = docs[0].get("document_id")
                     self._doc_ikm_mapping[doc_id] = remote_doc_id
                     
-                    # Trigger template extraction on remote server
+                    # Trigger template extraction on remote server (fast non-blocking)
                     try:
                         tpl_url = f"{self.base_url}/api/v1/documents/{remote_doc_id}/template-extraction"
-                        httpx.post(tpl_url, headers=self._get_headers(), timeout=5.0)
+                        httpx.post(tpl_url, headers=self._get_headers(), timeout=1.0)
                     except Exception:
                         pass
                         
@@ -731,7 +746,7 @@ class HttpIKMAdapter(BaseIKMAdapter):
             try:
                 import httpx
                 url = f"{self.base_url}/api/v1/documents/{ikm_ref}/template"
-                r = httpx.get(url, headers=self._get_headers(), timeout=5.0)
+                r = httpx.get(url, headers=self._get_headers(), timeout=1.0)
                 if r.status_code == 200:
                     local_template["remote_template_graph"] = r.json()
             except Exception:
@@ -756,7 +771,7 @@ class HttpIKMAdapter(BaseIKMAdapter):
         try:
             # Query remote template extraction graph
             tpl_url = f"{self.base_url}/api/v1/documents/{ikm_ref}/template"
-            tpl_resp = httpx.get(tpl_url, headers=self._get_headers(), timeout=5.0)
+            tpl_resp = httpx.get(tpl_url, headers=self._get_headers(), timeout=1.0)
             if tpl_resp.status_code == 200:
                 tpl_data = tpl_resp.json()
                 if "ikm_template" in extracted["profile"]:
@@ -766,13 +781,51 @@ class HttpIKMAdapter(BaseIKMAdapter):
                 
             # Query key fields
             kf_url = f"{self.base_url}/api/v1/documents/{ikm_ref}/key-fields"
-            kf_resp = httpx.get(kf_url, headers=self._get_headers(), timeout=5.0)
+            kf_resp = httpx.get(kf_url, headers=self._get_headers(), timeout=1.0)
             if kf_resp.status_code == 200:
                 extracted["profile"]["ikm_key_fields"] = kf_resp.json()
         except Exception:
             pass
 
         return extracted
+
+    def download_document(self, ikm_ref: str) -> Optional[bytes]:
+        """
+        Retrieves the exact document binary bytes from remote IKM storage
+        via GET /api/v1/retrieve/documents/{document_id}/download.
+        """
+        import httpx
+        if not ikm_ref or ikm_ref.startswith("local-") or ikm_ref.startswith("ikm-"):
+            return None
+        if not self.authenticate():
+            return None
+        try:
+            url = f"{self.base_url}/api/v1/retrieve/documents/{ikm_ref}/download"
+            resp = httpx.get(url, headers=self._get_headers(), timeout=6.0)
+            if resp.status_code == 200 and resp.content:
+                return resp.content
+        except Exception:
+            pass
+        return None
+
+    def get_document_preview_data(self, ikm_ref: str) -> Optional[Dict[str, Any]]:
+        """
+        Fetches the LibreOffice-rendered PDF preview data from remote IKM
+        via GET /api/v1/documents/{document_id}/preview.
+        """
+        import httpx
+        if not ikm_ref or ikm_ref.startswith("local-") or ikm_ref.startswith("ikm-"):
+            return None
+        if not self.authenticate():
+            return None
+        try:
+            url = f"{self.base_url}/api/v1/documents/{ikm_ref}/preview"
+            resp = httpx.get(url, headers=self._get_headers(), timeout=6.0)
+            if resp.status_code == 200:
+                return resp.json()
+        except Exception:
+            pass
+        return None
 
     def get_document_status(self, doc_id_or_ref: str) -> str:
         """

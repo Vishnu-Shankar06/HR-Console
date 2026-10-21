@@ -644,6 +644,25 @@ class WordResumeService:
 
                 self._add_formatted_runs(p, block, base_size=Pt(10))
 
+            elif tag_name == "table":
+                rows = block.find_all("tr")
+                if rows:
+                    max_cols = max((len(r.find_all(["td", "th"])) for r in rows), default=1)
+                    doc_table = doc.add_table(rows=len(rows), cols=max_cols)
+                    doc_table.style = 'Table Grid'
+                    for r_idx, tr in enumerate(rows):
+                        cells = tr.find_all(["td", "th"])
+                        for c_idx, cell in enumerate(cells):
+                            if c_idx < max_cols:
+                                cell_p = doc_table.cell(r_idx, c_idx).paragraphs[0]
+                                cell_p.paragraph_format.space_before = Pt(2)
+                                cell_p.paragraph_format.space_after = Pt(2)
+                                is_th = cell.name.lower() == "th"
+                                self._add_formatted_runs(cell_p, cell, base_size=Pt(9.5))
+                                if is_th:
+                                    for r in cell_p.runs:
+                                        r.bold = True
+
         doc.save(str(output_path))
         return output_path
 

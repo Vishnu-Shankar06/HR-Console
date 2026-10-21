@@ -2,7 +2,7 @@ import uuid
 from typing import List, Optional
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Query
 from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.database import get_db
 from app.models.entities import Document, CandidateProfile, CandidatePII, ResumeVersion, RecruitmentAction, AuditEvent, MatchResult, Notification
@@ -46,18 +46,18 @@ def list_resumes(
     Search and list authorized candidate resume records with pagination.
     Omit protected PII by default to prevent unauthorized leakage.
     """
-    q = db.query(Document)
+    q = db.query(Document).options(
+        joinedload(Document.profile),
+        joinedload(Document.pii),
+        selectinload(Document.actions),
+        selectinload(Document.versions)
+    )
     docs = q.order_by(Document.uploaded_at.desc()).offset(skip).limit(limit).all()
 
     results = []
     for doc in docs:
-        ver_count = db.query(ResumeVersion).filter(ResumeVersion.doc_id == doc.doc_id).count()
-        actions = (
-            db.query(RecruitmentAction)
-            .filter(RecruitmentAction.doc_id == doc.doc_id)
-            .order_by(RecruitmentAction.action_at.desc())
-            .all()
-        )
+        ver_count = len(doc.versions) if doc.versions else 0
+        actions = sorted(doc.actions, key=lambda a: a.action_at, reverse=True) if doc.actions else []
         cand_status = "pending_review"
         latest_act = actions[0] if actions else None
         if actions:
@@ -76,7 +76,7 @@ def list_resumes(
             if cand_status.lower() != sf_low and doc.upload_status.lower() != sf_low:
                 continue
 
-        prof = db.query(CandidateProfile).filter(CandidateProfile.doc_id == doc.doc_id).first()
+        prof = doc.profile
         profile_dto = None
         if prof and prof.structured_profile_json:
             p_data = prof.structured_profile_json
@@ -95,7 +95,7 @@ def list_resumes(
         # Decrypt PII to get candidate's full name and contact information
         cand_name = None
         pii_dto = None
-        pii_rec = db.query(CandidatePII).filter(CandidatePII.doc_id == doc.doc_id).first()
+        pii_rec = doc.pii
         if pii_rec:
             decrypted = pii_crypto.decrypt_pii_dict({
                 "name_encrypted": pii_rec.name_encrypted,
@@ -280,16 +280,12 @@ def get_original_file(
     current_user: CurrentUser = Depends(get_current_user)
 ):
     """
-    Authorized streaming of the original resume document stored in DMS.
+    Authorized streaming of the original resume document stored in IKM or DMS.
     Ensures safe access control.
     """
     doc = db.query(Document).filter(Document.doc_id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail=f"Document '{doc_id}' not found.")
-
-    file_path = dms_adapter.get_file_path(doc.dms_ref)
-    if not file_path or not file_path.exists():
-        raise HTTPException(status_code=404, detail="Original document file not found in DMS storage.")
 
     # Audit log access
     db.add(AuditEvent(
@@ -302,11 +298,30 @@ def get_original_file(
     ))
     db.commit()
 
-    return FileResponse(
-        path=file_path,
-        media_type=doc.mime_type,
-        filename=doc.original_filename
-    )
+    # 1. Primary Remote Storage: Check IKM
+    from app.integrations.ikm_adapter import ikm_adapter
+    if doc.ikm_ref and not doc.ikm_ref.startswith("local-") and not doc.ikm_ref.startswith("ikm-"):
+        ikm_bytes = ikm_adapter.download_document(doc.ikm_ref)
+        if ikm_bytes:
+            from fastapi.responses import Response
+            import urllib.parse
+            encoded_fn = urllib.parse.quote(doc.original_filename)
+            return Response(
+                content=ikm_bytes,
+                media_type=doc.mime_type or "application/octet-stream",
+                headers={"Content-Disposition": f'attachment; filename="{doc.original_filename}"; filename*=UTF-8\'\'{encoded_fn}'}
+            )
+
+    # 2. Local DMS fallback
+    file_path = dms_adapter.get_file_path(doc.dms_ref)
+    if file_path and file_path.exists():
+        return FileResponse(
+            path=file_path,
+            media_type=doc.mime_type,
+            filename=doc.original_filename
+        )
+
+    raise HTTPException(status_code=404, detail="Original document file not found in IKM or DMS storage.")
 
 @router.get("/{doc_id}/preview")
 def get_resume_preview(
@@ -334,9 +349,26 @@ def stream_resume_inline(
     if not doc:
         raise HTTPException(status_code=404, detail=f"Document '{doc_id}' not found.")
 
+    # 1. Primary Remote Storage: Check IKM
+    from app.integrations.ikm_adapter import ikm_adapter
+    if doc.ikm_ref and not doc.ikm_ref.startswith("local-") and not doc.ikm_ref.startswith("ikm-"):
+        # Check if preview rendered PDF exists
+        prev_data = ikm_adapter.get_document_preview_data(doc.ikm_ref)
+        if prev_data and prev_data.get("content_bytes_b64"):
+            import base64
+            from fastapi.responses import Response
+            pdf_bytes = base64.b64decode(prev_data["content_bytes_b64"])
+            return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": "inline"})
+        
+        ikm_bytes = ikm_adapter.download_document(doc.ikm_ref)
+        if ikm_bytes:
+            from fastapi.responses import Response
+            return Response(content=ikm_bytes, media_type=doc.mime_type or "application/octet-stream", headers={"Content-Disposition": "inline"})
+
+    # 2. Local DMS fallback
     file_path = dms_adapter.get_file_path(doc.dms_ref)
     if not file_path or not file_path.exists():
-        raise HTTPException(status_code=404, detail="Original document file not found in DMS storage.")
+        raise HTTPException(status_code=404, detail="Original document file not found in IKM or DMS storage.")
 
     headers = {"Content-Disposition": "inline"}
     return FileResponse(

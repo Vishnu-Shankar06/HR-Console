@@ -13,7 +13,19 @@ class ResumePreviewService:
     In-application Resume Preview Service.
     Parses and renders PDF, DOCX, and text resumes into clean, in-app paginated
     representations without triggering browser downloads.
+    Includes high-performance caching based on file modification timestamp and size.
     """
+
+    def __init__(self):
+        self._preview_cache: Dict[str, Tuple[float, int, Dict[str, Any]]] = {}
+
+    def invalidate_cache(self, doc_id: Optional[str] = None):
+        if doc_id:
+            keys_to_del = [k for k in self._preview_cache if doc_id in k]
+            for k in keys_to_del:
+                self._preview_cache.pop(k, None)
+        else:
+            self._preview_cache.clear()
 
     def resolve_candidate_full_name(self, doc_id: str, original_filename: str, db: Session) -> str:
         pii = db.query(CandidatePII).filter(CandidatePII.doc_id == doc_id).first()
@@ -38,18 +50,77 @@ class ResumePreviewService:
         if not doc:
             raise HTTPException(status_code=404, detail=f"Document '{doc_id}' not found.")
 
-        file_path = dms_adapter.get_file_path(doc.dms_ref)
-        if not file_path or not file_path.exists():
-            raise HTTPException(status_code=404, detail=f"File for document '{doc_id}' not found in storage.")
+        cache_key = f"doc_{doc_id}"
+        cached = self._preview_cache.get(cache_key)
+        if cached:
+            return cached[2]
 
         cand_name = self.resolve_candidate_full_name(doc_id, doc.original_filename, db)
-        return self._render_file_to_preview(
+
+        # 1. Primary: If registered in remote IKM, query actual rendered preview
+        from app.integrations.ikm_adapter import ikm_adapter
+        if doc.ikm_ref and not doc.ikm_ref.startswith("local-") and not doc.ikm_ref.startswith("ikm-"):
+            prev_data = ikm_adapter.get_document_preview_data(doc.ikm_ref)
+            if prev_data and prev_data.get("content_bytes_b64"):
+                try:
+                    import base64, io, pypdf
+                    pdf_bytes = base64.b64decode(prev_data["content_bytes_b64"])
+                    reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+                    pages = []
+                    for idx, p in enumerate(reader.pages):
+                        p_text = p.extract_text() or ""
+                        pages.append(self._format_pdf_page_html(p_text, idx + 1, cand_name))
+                    if not pages:
+                        pages = [f"<div class='doc-preview-empty'><p>Document content available in IKM.</p></div>"]
+                    rendered = {
+                        "success": True,
+                        "doc_id": doc_id,
+                        "version_id": None,
+                        "filename": doc.original_filename,
+                        "full_name": cand_name,
+                        "mime_type": "application/pdf",
+                        "total_pages": len(pages),
+                        "pages": pages,
+                        "is_pdf": True,
+                        "pdf_stream_url": f"/api/resumes/{doc_id}/stream"
+                    }
+                    self._preview_cache[cache_key] = (0.0, len(pdf_bytes), rendered)
+                    return rendered
+                except Exception:
+                    pass
+
+        # 2. Local File or IKM download recovery
+        file_path = dms_adapter.get_file_path(doc.dms_ref)
+        if not file_path or not file_path.exists():
+            # Attempt to pull original from IKM if local disk file is missing
+            if doc.ikm_ref and not doc.ikm_ref.startswith("local-") and not doc.ikm_ref.startswith("ikm-"):
+                downloaded = ikm_adapter.download_document(doc.ikm_ref)
+                if downloaded:
+                    try:
+                        ext = doc.original_filename.rsplit(".", 1)[-1].lower() if "." in doc.original_filename else "docx"
+                        target_path = dms_adapter.originals_dir / f"{doc.doc_id}.{ext}"
+                        with open(target_path, "wb") as f:
+                            f.write(downloaded)
+                        file_path = target_path
+                    except Exception:
+                        pass
+
+        if not file_path or not file_path.exists():
+            raise HTTPException(status_code=404, detail=f"File for document '{doc_id}' not found in IKM or storage.")
+
+        rendered = self._render_file_to_preview(
             doc_id=doc_id,
             filename=doc.original_filename,
             cand_name=cand_name,
             file_path=file_path,
             mime_type=doc.mime_type
         )
+        try:
+            stat = file_path.stat()
+            self._preview_cache[cache_key] = (stat.st_mtime, stat.st_size, rendered)
+        except Exception:
+            self._preview_cache[cache_key] = (0.0, 0, rendered)
+        return rendered
 
     def get_version_preview(self, version_id: str, db: Session) -> Dict[str, Any]:
         ver = db.query(ResumeVersion).filter(ResumeVersion.version_id == version_id).first()
@@ -61,6 +132,15 @@ class ResumePreviewService:
         filename = f"{doc.original_filename.rsplit('.', 1)[0]}_v{version_id.split('-v')[-1]}.docx" if doc else f"{version_id}.docx"
         cand_name = self.resolve_candidate_full_name(ver.doc_id, filename, db)
 
+        cache_key = f"ver_{version_id}"
+        if file_path and file_path.exists():
+            try:
+                stat = file_path.stat()
+                cached = self._preview_cache.get(cache_key)
+                if cached and cached[0] == stat.st_mtime and cached[1] == stat.st_size:
+                    return cached[2]
+            except Exception:
+                stat = None
         if not file_path or not file_path.exists():
             # If revised_content string exists
             content = ver.revised_content or "No preview content available."
@@ -78,7 +158,7 @@ class ResumePreviewService:
                 "pdf_stream_url": None
             }
 
-        return self._render_file_to_preview(
+        rendered = self._render_file_to_preview(
             doc_id=ver.doc_id,
             filename=filename,
             cand_name=cand_name,
@@ -86,6 +166,9 @@ class ResumePreviewService:
             mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             version_id=version_id
         )
+        if stat is not None:
+            self._preview_cache[cache_key] = (stat.st_mtime, stat.st_size, rendered)
+        return rendered
 
     def _render_file_to_preview(
         self,

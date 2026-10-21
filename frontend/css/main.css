@@ -1564,6 +1564,62 @@ input[type="checkbox"] {
   display: block;
 }
 
+.word-editor-canvas table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+}
+
+.word-editor-canvas th, .word-editor-canvas td {
+  border: 1px solid #cbd5e1;
+  padding: 0.4rem 0.65rem;
+  font-size: 0.9rem;
+  text-align: left;
+}
+
+.word-editor-canvas th {
+  background: #f1f5f9;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.improve-cand-tabs {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  border-bottom: 2px solid var(--border-subtle);
+  padding-bottom: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.improve-cand-tab-btn {
+  padding: 0.45rem 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-subtle);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: all 0.15s ease;
+}
+
+.improve-cand-tab-btn:hover {
+  color: var(--text-main);
+  border-color: var(--primary-border);
+}
+
+.improve-cand-tab-btn.active {
+  background: var(--primary-subtle);
+  color: var(--primary);
+  border-color: var(--primary-border);
+  font-weight: 700;
+}
+
 /* ==========================================================================
    Side-by-Side Version Comparison (Diff Highlighting)
    ========================================================================== */

@@ -75,9 +75,27 @@ class EmailAgentService:
         if not doc:
             raise HTTPException(status_code=404, detail=f"Candidate resume '{doc_id}' not found.")
 
+        file_data = None
         file_path = dms_adapter.get_file_path(doc.dms_ref)
-        if not file_path or not file_path.exists():
-            raise HTTPException(status_code=404, detail=f"Original resume file for '{doc_id}' not found in DMS.")
+        if file_path and file_path.exists():
+            with open(file_path, "rb") as f:
+                file_data = f.read()
+        elif doc.ikm_ref:
+            try:
+                from app.integrations.ikm_adapter import ikm_adapter
+                file_data = ikm_adapter.download_document(doc.ikm_ref)
+                if file_data and file_path:
+                    try:
+                        file_path.parent.mkdir(parents=True, exist_ok=True)
+                        with open(file_path, "wb") as f:
+                            f.write(file_data)
+                    except Exception:
+                        pass
+            except Exception:
+                file_data = None
+
+        if not file_data:
+            raise HTTPException(status_code=404, detail=f"Original resume file for '{doc_id}' not found in DMS or IKM.")
 
         # 2. Fetch candidate identity (authorized decryption for escalation payload)
         pii_rec = db.query(CandidatePII).filter(CandidatePII.doc_id == doc_id).first()
@@ -154,10 +172,7 @@ Workflow & Inactivity Intelligence
 """
         msg.attach(MIMEText(body_text, "plain", "utf-8"))
 
-        # Attach the actual resume file from DMS
-        with open(file_path, "rb") as f:
-            file_data = f.read()
-
+        # Attach the actual resume file (from DMS or IKM)
         attachment_mime = MIMEApplication(file_data)
         attachment_mime.add_header(
             "Content-Disposition",

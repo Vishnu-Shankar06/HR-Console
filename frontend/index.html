@@ -272,7 +272,7 @@
 
           <!-- Shortlist Count Section -->
           <div class="form-group" style="margin-bottom:0;">
-            <label class="form-label" for="match-top-n-input">2. Shortlist Candidate Count</label>
+            <label class="form-label" for="match-top-n-input">Shortlist Candidate Count</label>
             <div class="top-n-input-wrapper">
               <input type="number" id="match-top-n-input" class="top-n-input" min="1" max="100" value="5"
                 placeholder="5">
@@ -286,7 +286,7 @@
 
         <!-- Right: Job Description -->
         <div class="card">
-          <h3 style="font-family: var(--font-heading); font-size: 1.05rem; margin-bottom: 0.4rem;">3. Job Description
+          <h3 style="font-family: var(--font-heading); font-size: 1.05rem; margin-bottom: 0.4rem;">Job Description
           </h3>
           <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1rem;">
             Select a saved requisition or paste job requirements.
@@ -374,7 +374,8 @@
             <div class="existing-resumes-container" id="improve-existing-container" style="display:none; margin-top:0.5rem;">
               <div class="existing-resumes-header">
                 <span style="font-size:0.75rem; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.04em;">
-                  Select Stored Resume (<span id="improve-selected-name">None Selected</span>)
+                  Select Existing Resumes (<span id="improve-selected-count">0</span> selected)
+                  <span id="improve-selected-name" style="display:none;">None Selected</span>
                 </span>
                 <label style="display:inline-flex; align-items:center; gap:0.35rem; font-size:0.8rem; cursor:pointer; color:var(--text-muted);">
                   <input type="checkbox" id="improve-select-all-existing" onchange="toggleSelectAllImproveExisting(this.checked)">
@@ -396,7 +397,7 @@
           <div class="card" style="margin-bottom:0; background:var(--bg-surface-subtle); display:flex; flex-direction:column; justify-content:space-between;">
             <div>
               <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
-                <h3 style="font-family: var(--font-heading); font-size: 1.05rem; margin-bottom: 0;">2. Job Description</h3>
+                <h3 style="font-family: var(--font-heading); font-size: 1.05rem; margin-bottom: 0;">Job Description</h3>
                 <button type="button" class="btn btn-secondary btn-sm" onclick="openManageJobsModal()"
                   title="Add or manage saved job openings">+ Manage Jobs</button>
               </div>
@@ -440,7 +441,7 @@
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.6rem;">
             <div>
               <h3 style="font-family: var(--font-heading); font-size: 1.05rem; margin-bottom: 0.2rem; color:var(--text-main);">
-                3. Candidate Personal & Contact Information
+                Candidate Personal & Contact Information
               </h3>
               <p style="font-size: 0.8rem; color: var(--text-muted); margin:0;">
                 Automatically populated for each selected resume. Missing fields are highlighted for verification.
@@ -1014,7 +1015,7 @@
     </div>
   </div>
 
-  <!-- 10. Resume Preview Modal with Side Navigation (< and >) and In-App Viewing -->
+  <!-- 10. Resume Preview Modal with Side Navigation (< and >), Top Download, and Bottom Center Page Controls -->
   <div class="modal-overlay" id="resume-preview-modal">
     <div class="modal-dialog preview-modal-dialog">
       <div class="modal-header">
@@ -1024,14 +1025,12 @@
           <span class="file-status-badge badge-ready" id="preview-modal-counter">1 of 1</span>
         </div>
 
-        <!-- Document Multipage Navigation (Page X of Y) -->
-        <div id="preview-doc-page-controls" class="preview-page-controls" style="display:none; align-items:center; gap:0.5rem;">
-          <button type="button" class="btn btn-secondary btn-sm" id="preview-page-prev" onclick="changeDocumentPage(-1)" style="padding:0.2rem 0.55rem; font-size:0.75rem;">&lsaquo; Prev Page</button>
-          <span id="preview-page-counter" style="font-size:0.8rem; font-weight:600; color:var(--text-main); min-width:85px; text-align:center;">Page 1 of 1</span>
-          <button type="button" class="btn btn-secondary btn-sm" id="preview-page-next" onclick="changeDocumentPage(1)" style="padding:0.2rem 0.55rem; font-size:0.75rem;">Next Page &rsaquo;</button>
+        <div style="display:flex; align-items:center; gap:0.6rem;">
+          <button type="button" class="btn btn-secondary btn-sm" id="preview-modal-download-btn" onclick="downloadCurrentPreviewDocument()" title="Download resume file">
+            <span style="font-size:0.85rem;">⬇</span> Download
+          </button>
+          <button class="modal-close-btn" onclick="closeModal('resume-preview-modal')">&times;</button>
         </div>
-
-        <button class="modal-close-btn" onclick="closeModal('resume-preview-modal')">&times;</button>
       </div>
       <div class="preview-nav-layout">
         <button type="button" class="preview-nav-btn" id="preview-btn-prev" onclick="navigateResumePreview(-1)" title="Previous Candidate (&larr;)">&lt;</button>
@@ -1042,6 +1041,13 @@
           <iframe id="preview-modal-frame" class="preview-frame" src="about:blank" style="display:none;"></iframe>
         </div>
         <button type="button" class="preview-nav-btn" id="preview-btn-next" onclick="navigateResumePreview(1)" title="Next Candidate (&rarr;)">&gt;</button>
+      </div>
+
+      <!-- Document Multipage Navigation (Page X of Y) at Bottom Center -->
+      <div id="preview-doc-page-controls" class="preview-page-controls" style="display:none; justify-content:center; align-items:center; gap:0.6rem; padding:0.65rem 0 0.25rem; border-top:1px solid var(--border-subtle); margin-top:0.35rem; width:100%;">
+        <button type="button" class="btn btn-secondary btn-sm" id="preview-page-prev" onclick="changeDocumentPage(-1)" style="padding:0.25rem 0.65rem; font-size:0.75rem;">&lsaquo; Prev Page</button>
+        <span id="preview-page-counter" style="font-size:0.8rem; font-weight:600; color:var(--text-main); min-width:90px; text-align:center;">Page 1 of 1</span>
+        <button type="button" class="btn btn-secondary btn-sm" id="preview-page-next" onclick="changeDocumentPage(1)" style="padding:0.25rem 0.65rem; font-size:0.75rem;">Next Page &rsaquo;</button>
       </div>
     </div>
   </div>
@@ -1058,7 +1064,12 @@
             <span class="diff-modified">~ Modified</span>
           </div>
         </div>
-        <button class="modal-close-btn" onclick="closeModal('version-compare-modal')">&times;</button>
+        <div style="display:flex; align-items:center; gap:0.6rem;">
+          <button type="button" class="btn btn-secondary btn-sm" id="compare-modal-download-btn" onclick="downloadCurrentPreviewDocument()" title="Download resume file">
+            <span style="font-size:0.85rem;">⬇</span> Download
+          </button>
+          <button class="modal-close-btn" onclick="closeModal('version-compare-modal')">&times;</button>
+        </div>
       </div>
       <div class="compare-grid">
         <div class="compare-panel">
@@ -1076,8 +1087,13 @@
           <div class="compare-panel-body" id="compare-revised-body"></div>
         </div>
       </div>
-      <div style="display:flex; justify-content:flex-end; gap:0.6rem; margin-top:1rem;">
-        <button class="btn btn-secondary btn-sm" onclick="closeModal('version-compare-modal')">Close</button>
+      <div style="display:flex; justify-content:center; align-items:center; position:relative; gap:0.6rem; margin-top:1rem; flex-wrap:wrap; border-top:1px solid var(--border-subtle); padding-top:0.65rem;">
+        <div id="compare-page-controls" style="display:none; justify-content:center; align-items:center; gap:0.5rem;">
+          <button type="button" class="btn btn-secondary btn-sm" id="compare-page-prev" onclick="navigateComparePages(-1)" style="padding:0.25rem 0.65rem; font-size:0.75rem;">&lsaquo; Prev Page</button>
+          <span id="compare-page-counter" style="font-size:0.8rem; font-weight:600; min-width:90px; text-align:center;">Page 1 of 1</span>
+          <button type="button" class="btn btn-secondary btn-sm" id="compare-page-next" onclick="navigateComparePages(1)" style="padding:0.25rem 0.65rem; font-size:0.75rem;">Next Page &rsaquo;</button>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="closeModal('version-compare-modal')" style="position:absolute; right:0;">Close</button>
       </div>
     </div>
   </div>
