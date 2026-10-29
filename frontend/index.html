@@ -191,6 +191,89 @@
           </div>
         </div>
       </div>
+
+      <!-- Dashboard Core Analytics & Activity Grid -->
+      <div class="grid-2" style="margin-bottom: 2rem; align-items: stretch;">
+        
+        <!-- Left: Recent Activity Logs (Below Total Resume & Awaiting Review) -->
+        <div class="card" style="display:flex; flex-direction:column;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.85rem; padding-bottom:0.6rem; border-bottom:1px solid var(--border-subtle);">
+            <div>
+              <h3 style="font-family:var(--font-heading); font-size:1.05rem; font-weight:700; margin:0; display:flex; align-items:center; gap:0.5rem;">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                </svg>
+                Recent Activity Logs
+              </h3>
+              <p style="font-size:0.78rem; color:var(--text-muted); margin:0.15rem 0 0 0;">
+                Real-time candidate actions, status updates, and audit trail
+              </p>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="switchTab('followups')" style="font-size:0.75rem; padding:0.25rem 0.65rem;">
+              View Follow-ups &rarr;
+            </button>
+          </div>
+
+          <div class="data-table-wrap" style="flex:1; max-height:360px; overflow-y:auto;">
+            <table class="data-table" id="dashboard-activity-table">
+              <thead>
+                <tr>
+                  <th>Candidate</th>
+                  <th>Action</th>
+                  <th>Details / Notes</th>
+                  <th>Time</th>
+                </tr>
+              </thead>
+              <tbody id="dashboard-activity-body">
+                <tr>
+                  <td colspan="4" class="text-dim text-center" style="padding:2rem;">Loading activity logs...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Right: Follow-up Status Distribution Pie Chart (Below Follow-ups Due & Active Jobs) -->
+        <div class="card" style="display:flex; flex-direction:column;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.85rem; padding-bottom:0.6rem; border-bottom:1px solid var(--border-subtle);">
+            <div>
+              <h3 style="font-family:var(--font-heading); font-size:1.05rem; font-weight:700; margin:0; display:flex; align-items:center; gap:0.5rem;">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path>
+                  <path d="M22 12A10 10 0 0 0 12 2v10z"></path>
+                </svg>
+                Follow-ups Status Breakdown
+              </h3>
+              <p style="font-size:0.78rem; color:var(--text-muted); margin:0.15rem 0 0 0;">
+                Pipeline distribution across review, overdue, and candidate follow-up stages
+              </p>
+            </div>
+            <span class="badge" id="piechart-total-badge" style="font-size:0.75rem; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle); font-weight:700;">
+              0 Total
+            </span>
+          </div>
+
+          <!-- Donut Pie Chart & Interactive Legend Body -->
+          <div class="donut-card-body" id="dashboard-donut-container">
+            <!-- Left: Donut SVG with Center Count -->
+            <div class="donut-chart-wrapper">
+              <svg class="donut-chart-svg" viewBox="0 0 200 200" id="dashboard-followups-svg">
+                <!-- Segments will be dynamically injected here -->
+              </svg>
+              <div class="donut-center-label">
+                <div class="donut-center-number" id="donut-center-val">0</div>
+                <div class="donut-center-text" id="donut-center-lbl">FOLLOW-UPS</div>
+              </div>
+            </div>
+
+            <!-- Right: Interactive Legend with Counts and Percentages -->
+            <div class="donut-legend" id="dashboard-followups-legend">
+              <div class="text-dim text-center" style="font-size:0.8rem; padding:1.5rem 0;">Analyzing follow-up statuses...</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
     </section>
 
     <!-- TAB 2: FIND CANDIDATES -->
@@ -205,7 +288,7 @@
       <div class="grid-2" style="margin-bottom: 2rem;">
         <!-- Left: Upload & Shortlist Input -->
         <div class="card">
-          <h3 style="font-family: var(--font-heading); font-size: 1.05rem; margin-bottom: 0.4rem;">1. Resume Upload &
+          <h3 style="font-family: var(--font-heading); font-size: 1.05rem; margin-bottom: 0.4rem;">Resume Upload &
             Search Scope</h3>
           <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1rem;">
             Add candidate resumes or evaluate against candidates in the repository.
@@ -234,8 +317,8 @@
                 Files</span>
             </div>
             <button type="button" id="btn-clear-all-uploads" class="btn btn-secondary btn-sm"
-              onclick="clearAllUploadedResumes()" style="display:none;">
-              Clear All
+              onclick="clearAllUploadedResumes()" style="display:none;" title="Clear candidate selection and search criteria without deleting uploads">
+              Clear Selection
             </button>
           </div>
 
@@ -244,7 +327,7 @@
           <!-- Expandable Select from Existing Button -->
           <button type="button" class="btn btn-secondary btn-sm" id="btn-toggle-match-existing" onclick="toggleExpandExistingMatch()"
             style="width: 100%; display: flex; justify-content: space-between; align-items: center; margin-top: 0.65rem; margin-bottom: 0.5rem; padding: 0.45rem 0.85rem;">
-            <span>📁 Select from Existing (<strong id="match-selected-count-badge">0</strong> selected)</span>
+            <span>Select from Existing (<strong id="match-selected-count-badge">0</strong> selected)</span>
             <span id="match-expand-chevron">▼</span>
           </button>
 
@@ -366,7 +449,7 @@
             <!-- Expandable Select from Existing Button -->
             <button type="button" class="btn btn-secondary btn-sm" id="btn-toggle-improve-existing" onclick="toggleExpandExistingImprove()"
               style="width: 100%; display: flex; justify-content: space-between; align-items: center; margin-top: 0.65rem; margin-bottom: 0.5rem; padding: 0.45rem 0.85rem;">
-              <span>📁 Select from Existing (<strong id="improve-selected-count-badge">0</strong> selected)</span>
+              <span>Select from Existing (<strong id="improve-selected-count-badge">0</strong> selected)</span>
               <span id="improve-expand-chevron">▼</span>
             </button>
 
@@ -436,30 +519,6 @@
           <div style="font-size:0.8rem; color:var(--text-muted);">Benchmarking candidate experience against target role without modifying original file</div>
         </div>
 
-        <!-- Candidate Personal Details Section (Multi-Candidate Cards) -->
-        <div style="margin-top: 1.5rem;">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.6rem;">
-            <div>
-              <h3 style="font-family: var(--font-heading); font-size: 1.05rem; margin-bottom: 0.2rem; color:var(--text-main);">
-                Candidate Personal & Contact Information
-              </h3>
-              <p style="font-size: 0.8rem; color: var(--text-muted); margin:0;">
-                Automatically populated for each selected resume. Missing fields are highlighted for verification.
-              </p>
-            </div>
-          </div>
-
-          <div id="improve-personal-details-container">
-            <!-- Dynamic personal details cards generated per selected resume -->
-          </div>
-
-          <!-- Continue / OK Button below Personal Information section -->
-          <div style="display:flex; justify-content:flex-end; margin-top:0.8rem;">
-            <button type="button" class="btn btn-primary" id="btn-continue-improvement" onclick="runResumeImprovementAnalysis()" style="padding:0.6rem 1.25rem; font-size:0.9rem; font-weight:700;">
-              Continue &bull; Start Resume Improvement
-            </button>
-          </div>
-        </div>
       </div>
 
       <!-- Results Area -->
@@ -661,8 +720,8 @@
 
   <!-- 1. Score Breakdown Modal -->
   <div class="modal-overlay" id="score-breakdown-modal">
-    <div class="modal-dialog">
-      <div class="modal-header">
+    <div class="modal-dialog score-breakdown-dialog">
+      <div class="modal-header" style="margin-bottom:0.75rem; padding-bottom:0.5rem;">
         <div class="modal-title">Internal Score Breakdown</div>
         <button class="modal-close-btn" onclick="closeModal('score-breakdown-modal')">&times;</button>
       </div>
@@ -1015,39 +1074,48 @@
     </div>
   </div>
 
-  <!-- 10. Resume Preview Modal with Side Navigation (< and >), Top Download, and Bottom Center Page Controls -->
+  <!-- 10. Resume Preview Modal with Smooth Chevrons, Sleek Header, and Seamless Page Flow -->
   <div class="modal-overlay" id="resume-preview-modal">
     <div class="modal-dialog preview-modal-dialog">
-      <div class="modal-header">
+      <div class="modal-header preview-modal-header">
         <div class="preview-header-meta">
           <span class="preview-candidate-name" id="preview-modal-candidate-name">Candidate Resume</span>
-          <span class="candidate-doc-tag" id="preview-modal-doc-tag" style="margin:0;">ID: -</span>
-          <span class="file-status-badge badge-ready" id="preview-modal-counter">1 of 1</span>
+          <span class="preview-counter-pill" id="preview-modal-counter">Candidate 1 of 1</span>
+          <span class="preview-id-pill" id="preview-modal-doc-tag">ID: -</span>
         </div>
 
         <div style="display:flex; align-items:center; gap:0.6rem;">
-          <button type="button" class="btn btn-secondary btn-sm" id="preview-modal-download-btn" onclick="downloadCurrentPreviewDocument()" title="Download resume file">
+          <button type="button" class="btn btn-secondary btn-sm" id="preview-modal-open-editor-btn" onclick="openWordCraftEditorModal(AppState.previewList?.[AppState.previewIndex]?.doc_id || AppState.selectedResumeDocId)" title="Open in Word Editor">
+            Open Editor
+          </button>
+          <button type="button" class="btn btn-primary btn-sm" id="preview-modal-download-btn" onclick="downloadCurrentPreviewDocument()" title="Download resume file">
             <span style="font-size:0.85rem;">⬇</span> Download
           </button>
           <button class="modal-close-btn" onclick="closeModal('resume-preview-modal')">&times;</button>
         </div>
       </div>
+      <!-- Dedicated Improved Resumes Tab Bar inside Preview Modal -->
+      <div id="preview-improved-tabs-bar" class="preview-improved-tabs-bar" style="display:none;"></div>
       <div class="preview-nav-layout">
-        <button type="button" class="preview-nav-btn" id="preview-btn-prev" onclick="navigateResumePreview(-1)" title="Previous Candidate (&larr;)">&lt;</button>
+        <button type="button" class="preview-nav-btn preview-nav-prev" id="preview-btn-prev" onclick="navigateResumePreview(-1)" title="Previous Candidate (&larr;)">
+          <span>&#10094;</span>
+        </button>
         <div class="preview-content-box" id="preview-content-box">
           <div id="preview-inapp-container" class="preview-inapp-container">
             <div id="preview-paper-sheet" class="preview-paper-sheet"></div>
           </div>
           <iframe id="preview-modal-frame" class="preview-frame" src="about:blank" style="display:none;"></iframe>
         </div>
-        <button type="button" class="preview-nav-btn" id="preview-btn-next" onclick="navigateResumePreview(1)" title="Next Candidate (&rarr;)">&gt;</button>
+        <button type="button" class="preview-nav-btn preview-nav-next" id="preview-btn-next" onclick="navigateResumePreview(1)" title="Next Candidate (&rarr;)">
+          <span>&#10095;</span>
+        </button>
       </div>
 
-      <!-- Document Multipage Navigation (Page X of Y) at Bottom Center -->
-      <div id="preview-doc-page-controls" class="preview-page-controls" style="display:none; justify-content:center; align-items:center; gap:0.6rem; padding:0.65rem 0 0.25rem; border-top:1px solid var(--border-subtle); margin-top:0.35rem; width:100%;">
-        <button type="button" class="btn btn-secondary btn-sm" id="preview-page-prev" onclick="changeDocumentPage(-1)" style="padding:0.25rem 0.65rem; font-size:0.75rem;">&lsaquo; Prev Page</button>
-        <span id="preview-page-counter" style="font-size:0.8rem; font-weight:600; color:var(--text-main); min-width:90px; text-align:center;">Page 1 of 1</span>
-        <button type="button" class="btn btn-secondary btn-sm" id="preview-page-next" onclick="changeDocumentPage(1)" style="padding:0.25rem 0.65rem; font-size:0.75rem;">Next Page &rsaquo;</button>
+      <!-- Clean pagination bar for multi-page documents -->
+      <div id="preview-doc-page-controls" class="preview-page-controls" style="display:none;">
+        <button type="button" class="btn btn-secondary btn-sm" id="preview-page-prev" onclick="changeDocumentPage(-1)">&lsaquo; Prev Page</button>
+        <span id="preview-page-counter" class="preview-page-indicator">Page 1 of 1</span>
+        <button type="button" class="btn btn-secondary btn-sm" id="preview-page-next" onclick="changeDocumentPage(1)">Next Page &rsaquo;</button>
       </div>
     </div>
   </div>
@@ -1057,43 +1125,114 @@
     <div class="modal-dialog compare-modal-dialog">
       <div class="modal-header">
         <div>
-          <div class="modal-title">Side-by-Side Resume Comparison</div>
+          <div class="modal-title">Actual Resume Comparison &amp; Change Highlights</div>
           <div style="font-size:0.78rem; color:var(--text-muted); margin-top:2px;">
-            <span class="diff-added">+ Added / Enhanced</span> &nbsp;|&nbsp;
-            <span class="diff-removed">- Removed</span> &nbsp;|&nbsp;
-            <span class="diff-modified">~ Modified</span>
+            <span class="marker-red" style="font-size:0.75rem; text-decoration:none;">Red Marker: Original / Removed Words</span> &nbsp;|&nbsp;
+            <span class="marker-green" style="font-size:0.75rem;">Green Marker: Improved / Added Words</span>
           </div>
         </div>
         <div style="display:flex; align-items:center; gap:0.6rem;">
-          <button type="button" class="btn btn-secondary btn-sm" id="compare-modal-download-btn" onclick="downloadCurrentPreviewDocument()" title="Download resume file">
-            <span style="font-size:0.85rem;">⬇</span> Download
+          <button type="button" class="btn btn-primary btn-sm" id="compare-modal-download-btn" onclick="downloadCurrentCompareDocument()" style="font-weight:600; padding:0.4rem 0.9rem;" title="Download improved Word resume (.docx)">
+            Download Improved (.docx)
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" id="compare-modal-open-editor-btn" onclick="openWordCraftEditorModal(AppState.compareList?.[AppState.compareIndex]?.doc_id || AppState.activeImprovementDocId || window._currentImprovementData?.doc_id)" style="font-weight:600; padding:0.4rem 0.9rem;" title="Open in Word editor">
+            Open Editor
           </button>
           <button class="modal-close-btn" onclick="closeModal('version-compare-modal')">&times;</button>
         </div>
       </div>
-      <div class="compare-grid">
-        <div class="compare-panel">
+      <!-- Dedicated Improved Resumes Tab Bar inside Version Compare Modal -->
+      <div id="compare-improved-tabs-bar" class="preview-improved-tabs-bar" style="display:none;"></div>
+
+      <div class="compare-grid" id="compare-grid-container">
+        <div class="compare-panel" id="compare-original-panel">
           <div class="compare-panel-header">
-            <span>📄 Original Resume (Baseline)</span>
+            <span>Original Resume (Baseline)</span>
             <span class="file-status-badge badge-ready" id="compare-original-badge">Original</span>
           </div>
           <div class="compare-panel-body" id="compare-original-body"></div>
         </div>
-        <div class="compare-panel">
+        <div class="compare-panel" id="compare-revised-panel">
           <div class="compare-panel-header">
-            <span>✨ Revised Document (With Approved Enhancements)</span>
-            <span class="file-status-badge badge-ready" id="compare-revised-badge" style="background:var(--primary-subtle); color:var(--primary); border-color:var(--primary-border);">Revised</span>
+            <span>Improved Resume (With Highlighted Changes)</span>
+            <span class="file-status-badge badge-ready" id="compare-revised-badge" style="background:var(--primary-subtle); color:var(--primary); border-color:var(--primary-border);">Improved</span>
           </div>
           <div class="compare-panel-body" id="compare-revised-body"></div>
         </div>
       </div>
-      <div style="display:flex; justify-content:center; align-items:center; position:relative; gap:0.6rem; margin-top:1rem; flex-wrap:wrap; border-top:1px solid var(--border-subtle); padding-top:0.65rem;">
-        <div id="compare-page-controls" style="display:none; justify-content:center; align-items:center; gap:0.5rem;">
-          <button type="button" class="btn btn-secondary btn-sm" id="compare-page-prev" onclick="navigateComparePages(-1)" style="padding:0.25rem 0.65rem; font-size:0.75rem;">&lsaquo; Prev Page</button>
-          <span id="compare-page-counter" style="font-size:0.8rem; font-weight:600; min-width:90px; text-align:center;">Page 1 of 1</span>
-          <button type="button" class="btn btn-secondary btn-sm" id="compare-page-next" onclick="navigateComparePages(1)" style="padding:0.25rem 0.65rem; font-size:0.75rem;">Next Page &rsaquo;</button>
+      <div style="display:flex; justify-content:flex-end; align-items:center; position:relative; gap:0.6rem; border-top:1px solid var(--border-subtle); padding:0.6rem 1.25rem; background:var(--bg-surface);">
+        <button class="btn btn-secondary btn-sm" onclick="closeModal('version-compare-modal')">Close Comparison</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 12. Multiple Improved Resumes Download Modal -->
+  <div class="modal-overlay" id="multi-download-modal" style="z-index:1050;">
+    <div class="modal-dialog" style="max-width: 680px; width: 95%;">
+      <div class="modal-header">
+        <div>
+          <div class="modal-title">Download Improved Resumes</div>
+          <div style="font-size:0.8rem; color:var(--text-muted); margin-top:2px;">
+            Select any candidate below to download their improved Word (.docx) resume
+          </div>
         </div>
-        <button class="btn btn-secondary btn-sm" onclick="closeModal('version-compare-modal')" style="position:absolute; right:0;">Close</button>
+        <button class="modal-close-btn" onclick="closeModal('multi-download-modal')">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 1.25rem; max-height: 60vh; overflow-y: auto;">
+        <div id="multi-download-candidates-list" style="display: flex; flex-direction: column; gap: 0.75rem;">
+          <!-- Dynamically populated with candidates whose improvements have been successfully applied -->
+        </div>
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:0.6rem; border-top:1px solid var(--border-subtle); padding:0.75rem 1.25rem; background:var(--bg-surface);">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="closeModal('multi-download-modal')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 13. WordCraft Full Word Processor Modal -->
+  <div class="modal-overlay" id="wordcraft-editor-modal" style="z-index:1100;">
+    <div class="modal-dialog wordcraft-modal-dialog">
+      <!-- Header Bar -->
+      <div class="modal-header" style="padding:0.75rem 1.25rem; margin-bottom:0; background:var(--bg-surface); border-bottom:1px solid var(--border-subtle); display:flex; align-items:center; justify-content:space-between; flex-shrink:0;">
+        <div style="display:flex; align-items:center; gap:0.75rem;">
+          <div style="background:linear-gradient(135deg, #1d4ed8, #2563eb); color:#fff; width:34px; height:34px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:1.15rem; font-weight:800; box-shadow:0 2px 4px rgba(37,99,235,0.4);">
+            W
+          </div>
+          <div>
+            <div style="display:flex; align-items:center; gap:0.5rem;">
+              <span style="font-weight:700; font-size:1rem; color:#f8fafc;">WordCraft Studio</span>
+              <span class="badge" style="background:rgba(59,130,246,0.15); color:#60a5fa; border:1px solid rgba(59,130,246,0.3); font-size:0.7rem; padding:0.15rem 0.5rem; border-radius:999px;">Full Word Processor · Rust/WASM</span>
+            </div>
+            <div style="font-size:0.76rem; color:var(--text-muted); margin-top:1px;" id="wordcraft-modal-subtitle">
+              Native .docx editing · Ribbon, Styles, Tables, Tracking, Rulers &amp; Layout
+            </div>
+          </div>
+        </div>
+        
+        <div style="display:flex; align-items:center; gap:0.6rem;">
+          <button type="button" class="btn btn-secondary btn-sm" id="wordcraft-save-btn" onclick="saveWordCraftDocument()" style="font-size:0.78rem; padding:0.35rem 0.8rem; font-weight:600;" title="Save current edits to document revision">
+            Save
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" id="wordcraft-save-library-btn" onclick="saveWordCraftToLibrary()" style="font-size:0.78rem; padding:0.35rem 0.8rem; font-weight:600;" title="Save this edited document to Application Library & IKM">
+            Save to Library
+          </button>
+          <button type="button" class="btn btn-primary btn-sm" id="wordcraft-download-btn" onclick="downloadWordCraftDocument()" style="font-size:0.78rem; padding:0.35rem 0.8rem; background:linear-gradient(135deg, #2563eb, #1d4ed8); border:1px solid #3b82f6; font-weight:600;" title="Download edited DOCX file">
+            Download .docx
+          </button>
+          <button class="modal-close-btn" onclick="closeModal('wordcraft-editor-modal')" style="font-size:1.4rem; padding:0.2rem 0.5rem; line-height:1;" title="Close Editor">&times;</button>
+        </div>
+      </div>
+
+      <!-- Quick Guidance Banner -->
+      <div style="background:rgba(30, 41, 59, 0.7); border-bottom:1px solid var(--border-subtle); padding:0.4rem 1.25rem; font-size:0.76rem; color:#94a3b8; display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
+        <div>
+          <strong>Direct Document Editing:</strong> Modify text, styling, or tables directly in the editor below. Click <strong>Save</strong> to persist to your document revision, or <strong>Save to Library</strong> to register a new version in Resume Library and IKM.
+        </div>
+      </div>
+
+      <!-- Editor Canvas Iframe -->
+      <div class="wordcraft-iframe-container">
+        <iframe id="wordcraft-iframe" src="about:blank" allow="clipboard-read; clipboard-write; fullscreen"></iframe>
       </div>
     </div>
   </div>
@@ -1102,6 +1241,8 @@
   <div id="toast-container"></div>
 
   <!-- Scripts -->
+  <script src="/static/js/vendor/jszip.min.js"></script>
+  <script src="/static/js/vendor/docx-preview.min.js"></script>
   <script src="/static/js/api.js"></script>
   <script src="/static/js/app.js"></script>
 </body>

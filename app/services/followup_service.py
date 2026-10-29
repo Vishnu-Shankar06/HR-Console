@@ -54,8 +54,12 @@ class FollowupService:
                 next_action_time = next_action_time.replace(tzinfo=timezone.utc)
 
             status_val = latest_action.status if latest_action else "pending_review"
-            is_overdue = (next_action_time is not None and next_action_time < now and status_val != "hired")
-            is_stale = (days_inactive >= threshold_days and status_val != "hired")
+            # Candidates with status 'hired' do not participate in inactivity tracking or 90-day follow-up emails
+            if status_val and status_val.lower() == "hired":
+                continue
+
+            is_overdue = (next_action_time is not None and next_action_time < now)
+            is_stale = (days_inactive >= threshold_days)
 
             # Check if notification exists or needs creation for dormant candidate
             notif = db.query(Notification).filter(Notification.doc_id == doc.doc_id).first()

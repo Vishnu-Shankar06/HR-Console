@@ -11,7 +11,7 @@ def test_resume_preview_text_and_docx(client: TestClient):
     assert "pages" in data
     assert len(data["pages"]) >= 1
     assert data["total_pages"] >= 1
-    assert "Arun Kumar" in data["pages"][0] or "python" in data["pages"][0].lower()
+    assert "arun kumar" in data["pages"][0].lower() or "python" in data["pages"][0].lower()
 
     # Test preview for DOC-1002 (DOCX)
     resp_docx = client.get("/api/resumes/DOC-1002/preview")
@@ -20,7 +20,7 @@ def test_resume_preview_text_and_docx(client: TestClient):
     assert data_docx["success"] is True
     assert data_docx["doc_id"] == "DOC-1002"
     assert len(data_docx["pages"]) >= 1
-    assert "Priya Sharma" in data_docx["pages"][0] or "doc-cand-name" in data_docx["pages"][0]
+    assert "priya sharma" in data_docx["pages"][0].lower() or "doc-cand-name" in data_docx["pages"][0]
 
 def test_resume_preview_multipage_structure(client: TestClient):
     resp = client.get("/api/resumes/DOC-1001/preview")

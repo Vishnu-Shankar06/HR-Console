@@ -21,8 +21,51 @@ const AppState = {
   candidatePersonalDetails: {},
   matchScope: "uploaded",
   allFollowups: [],
-  selectedDocIds: new Set()
+  selectedDocIds: new Set(),
+  appliedImprovements: {},
+  isImprovedPreviewMode: false,
+  compareList: [],
+  compareIndex: 0
 };
+
+// Modern SVG Eye Icon (replaces emojis with clean password-revealer style vector icon)
+const SVG_EYE_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; display:inline-block;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
+
+// Helper: strictly resolves only currently selected / uploaded candidate resumes for improvement
+function getSelectedImprovementDocIds() {
+  const selectedDocIds = new Set();
+  (AppState.improveUploadedResumes || []).forEach(r => {
+    if (r.doc_id) selectedDocIds.add(r.doc_id);
+  });
+  AppState.selectedExistingImproveDocIds.forEach(id => selectedDocIds.add(id));
+  if (selectedDocIds.size === 0 && AppState.selectedResumeDocId) {
+    selectedDocIds.add(AppState.selectedResumeDocId);
+  }
+  return Array.from(selectedDocIds);
+}
+
+// Helper: resolves only candidates whose improvements have been successfully applied and downloaded
+function getAppliedImprovementsList() {
+  const applied = AppState.appliedImprovements || {};
+  const batch = AppState.currentImprovementBatchDocIds || [];
+  const list = [];
+  const addedIds = new Set();
+  if (batch.length > 0) {
+    batch.forEach(id => {
+      if (applied[id] && !addedIds.has(id)) {
+        list.push(applied[id]);
+        addedIds.add(id);
+      }
+    });
+  }
+  Object.keys(applied).forEach(id => {
+    if (applied[id] && !addedIds.has(id)) {
+      list.push(applied[id]);
+      addedIds.add(id);
+    }
+  });
+  return list;
+}
 
 // Theme Management
 function initTheme() {
@@ -78,6 +121,21 @@ function openModal(modalId) {
 function closeModal(modalId) {
   const modal = document.getElementById(modalId);
   if (modal) modal.classList.remove("active");
+  if (modalId === "resume-preview-modal") {
+    AppState.isImprovedPreviewMode = false;
+    const tabsBar = document.getElementById("preview-improved-tabs-bar");
+    if (tabsBar) {
+      tabsBar.style.display = "none";
+      tabsBar.innerHTML = "";
+    }
+  }
+  if (modalId === "version-compare-modal") {
+    const tabsBar = document.getElementById("compare-improved-tabs-bar");
+    if (tabsBar) {
+      tabsBar.style.display = "none";
+      tabsBar.innerHTML = "";
+    }
+  }
 }
 
 // ==========================================
@@ -86,27 +144,29 @@ function closeModal(modalId) {
 function downloadCurrentPreviewDocument() {
   let docId = null;
   let filename = null;
+  let versionId = null;
   if (AppState.previewList && AppState.previewList[AppState.previewIndex]) {
     const item = AppState.previewList[AppState.previewIndex];
     docId = item.doc_id || item.docId;
     filename = item.original_filename || `${docId}.docx`;
+    versionId = item.version_id || item.versionId || null;
   } else if (window._currentImprovementData && window._currentImprovementData.doc_id) {
     docId = window._currentImprovementData.doc_id;
     filename = `${docId}.docx`;
   }
-  if (!docId) {
+  if (!docId && !versionId) {
     showToast("No active document to download.", "warning");
     return;
   }
 
-  const downloadUrl = `/api/resumes/${encodeURIComponent(docId)}/file`;
+  const downloadUrl = versionId ? `/api/versions/${encodeURIComponent(versionId)}/file` : `/api/resumes/${encodeURIComponent(docId)}/file`;
   const a = document.createElement("a");
   a.href = downloadUrl;
   a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
-  showToast(`Downloading resume for candidate ${docId}...`, "info");
+  showToast(`Downloading resume for candidate ${docId || versionId}...`, "info");
 }
 
 function downloadCandidateResume(docId) {
@@ -128,12 +188,24 @@ function downloadCandidateResume(docId) {
 
 function getMatchScopedPreviewList(includeDocId = null) {
   const scoped = [];
-  (AppState.uploadedResumes || []).filter(r => r.doc_id).forEach(r => {
-    scoped.push({
-      doc_id: r.doc_id,
-      full_name: r.full_name || r.candidate_name || r.filename || r.doc_id,
-      original_filename: r.filename || `${r.doc_id}.docx`
+  // First include active match search results if available
+  if (AppState.activeMatchResults?.results?.length) {
+    AppState.activeMatchResults.results.forEach(r => {
+      scoped.push({
+        doc_id: r.doc_id,
+        full_name: r.full_name || r.candidate_name || r.candidate_label || r.doc_id,
+        original_filename: r.original_filename || `${r.doc_id}.docx`
+      });
     });
+  }
+  (AppState.uploadedResumes || []).filter(r => r.doc_id).forEach(r => {
+    if (!scoped.some(x => x.doc_id === r.doc_id)) {
+      scoped.push({
+        doc_id: r.doc_id,
+        full_name: r.full_name || r.candidate_name || r.filename || r.doc_id,
+        original_filename: r.filename || `${r.doc_id}.docx`
+      });
+    }
   });
   AppState.selectedExistingMatchDocIds.forEach(id => {
     if (!scoped.some(x => x.doc_id === id)) {
@@ -158,12 +230,26 @@ function getMatchScopedPreviewList(includeDocId = null) {
 
 function getImproveScopedPreviewList(includeDocId = null) {
   const scoped = [];
-  (AppState.improveUploadedResumes || []).filter(r => r.doc_id).forEach(r => {
-    scoped.push({
-      doc_id: r.doc_id,
-      full_name: r.full_name || r.candidate_name || r.filename || r.doc_id,
-      original_filename: r.filename || `${r.doc_id}.docx`
+  const activeDocIds = Object.keys(AppState.improvementAnalysesByDocId || {});
+  if (activeDocIds.length) {
+    activeDocIds.forEach(id => {
+      const a = AppState.improvementAnalysesByDocId[id];
+      const r = (AppState.resumes || []).find(x => x.doc_id === id);
+      scoped.push({
+        doc_id: id,
+        full_name: a?.candidate_personal_details?.name || r?.full_name || r?.candidate_name || id,
+        original_filename: r?.original_filename || `${id}.docx`
+      });
     });
+  }
+  (AppState.improveUploadedResumes || []).filter(r => r.doc_id).forEach(r => {
+    if (!scoped.some(x => x.doc_id === r.doc_id)) {
+      scoped.push({
+        doc_id: r.doc_id,
+        full_name: r.full_name || r.candidate_name || r.filename || r.doc_id,
+        original_filename: r.filename || `${r.doc_id}.docx`
+      });
+    }
   });
   AppState.selectedExistingImproveDocIds.forEach(id => {
     if (!scoped.some(x => x.doc_id === id)) {
@@ -186,14 +272,37 @@ function getImproveScopedPreviewList(includeDocId = null) {
   return scoped;
 }
 
-function openResumePreview(docId, candidateList = null) {
-  if (!docId) return;
+function openResumePreview(docId, candidateList = null, versionId = null) {
+  if (!docId && !versionId) return;
+
+  AppState.isImprovedPreviewMode = false;
+  const tabsBar = document.getElementById("preview-improved-tabs-bar");
+  if (tabsBar) {
+    tabsBar.style.display = "none";
+    tabsBar.innerHTML = "";
+  }
+
+  if (versionId) {
+    const resumeObj = (AppState.resumes || []).find(r => r.doc_id === docId);
+    const pii = docId ? AppState.candidatePersonalDetails[docId] : null;
+    const fallbackName = pii?.name || resumeObj?.full_name || resumeObj?.candidate_name || docId || versionId;
+    AppState.previewList = [{
+      doc_id: docId || versionId,
+      version_id: versionId,
+      full_name: `${fallbackName} (Improved Resume)`,
+      original_filename: `${fallbackName}_Improved.docx`
+    }];
+    AppState.previewIndex = 0;
+    renderResumePreviewAtIndex(0);
+    openModal("resume-preview-modal");
+    return;
+  }
 
   // Build scoped candidate list based on current workflow context
   let list = candidateList;
   if (!list || !list.length) {
     if (AppState.currentTab === "matching") {
-      list = getMatchScopedPreviewList(docId);
+      list = getMatchResultsPreviewList() || getMatchScopedPreviewList(docId);
     } else if (AppState.currentTab === "improvement") {
       list = getImproveScopedPreviewList(docId);
     } else if (AppState.currentTab === "followups" && AppState.allFollowups?.length) {
@@ -240,6 +349,9 @@ function navigateResumePreview(direction) {
   if (nextIdx >= 0 && nextIdx < AppState.previewList.length) {
     AppState.previewIndex = nextIdx;
     renderResumePreviewAtIndex(nextIdx);
+    if (AppState.isImprovedPreviewMode) {
+      renderImprovedTabsBar(nextIdx);
+    }
   }
 }
 
@@ -247,6 +359,7 @@ async function renderResumePreviewAtIndex(idx) {
   if (!AppState.previewList || !AppState.previewList[idx]) return;
   const item = AppState.previewList[idx];
   const docId = item.doc_id || item.docId;
+  const versionId = item.version_id || item.versionId || null;
   const name = item.full_name || item.candidate_name || item.candidate_label || item.filename || docId;
 
   const nameEl = document.getElementById("preview-modal-candidate-name");
@@ -263,8 +376,14 @@ async function renderResumePreviewAtIndex(idx) {
   const frame = document.getElementById("preview-modal-frame");
 
   if (nameEl) nameEl.textContent = name;
-  if (tagEl) tagEl.textContent = `ID: ${docId}`;
-  if (counterEl) counterEl.textContent = `${idx + 1} of ${AppState.previewList.length}`;
+  if (AppState.isImprovedPreviewMode) {
+    if (counterEl) counterEl.textContent = `${item.view_label || ('View ' + (idx + 1))} of ${AppState.previewList.length}`;
+    if (tagEl) tagEl.textContent = `${item.filename || item.original_filename || docId} • Improved`;
+    renderImprovedTabsBar(idx);
+  } else {
+    if (tagEl) tagEl.textContent = versionId ? `Version: ${versionId}` : `ID: ${docId}`;
+    if (counterEl) counterEl.textContent = `Candidate ${idx + 1} of ${AppState.previewList.length}`;
+  }
 
   if (prevBtn) prevBtn.disabled = (idx <= 0);
   if (nextBtn) nextBtn.disabled = (idx >= AppState.previewList.length - 1);
@@ -277,37 +396,146 @@ async function renderResumePreviewAtIndex(idx) {
     paperSheet.innerHTML = `
       <div style="text-align:center; padding:3rem 1rem; color:var(--text-muted);">
         <div class="spinner" style="margin:0 auto 1rem;"></div>
-        <div>Loading resume document...</div>
+        <div>Loading authentic resume document...</div>
       </div>
     `;
   }
 
-  API.recordResumeOpened(docId).catch(() => {});
+  if (docId) {
+    API.recordResumeOpened(docId).catch(() => {});
+  }
 
   AppState.currentPreviewPages = [];
   AppState.currentPreviewPageIndex = 0;
 
   try {
-    const previewData = await API.getResumePreview(docId);
+    const previewData = versionId ? await API.getVersionPreview(versionId) : await API.getResumePreview(docId);
+    const isPdf = (previewData?.is_pdf === true) && !!(previewData?.pdf_stream_url);
+    const isDocx = (previewData?.is_docx === true) ||
+                   (previewData?.filename && previewData.filename.toLowerCase().endsWith(".docx")) ||
+                   (previewData?.mime_type && previewData.mime_type.includes("wordprocessingml"));
+
+    if (isPdf && frame) {
+      // Display the actual PDF file natively without any synthetic alterations
+      if (inappContainer) inappContainer.style.display = "none";
+      frame.style.display = "block";
+      frame.src = previewData.pdf_stream_url;
+      if (pageControls) pageControls.style.display = "none";
+      const contentBox = document.getElementById("preview-content-box");
+      if (contentBox) contentBox.scrollTop = 0;
+      return;
+    }
+
+    if (isDocx && window.docx && paperSheet) {
+      try {
+        if (frame) frame.style.display = "none";
+        if (inappContainer) inappContainer.style.display = "block";
+        if (pageControls) pageControls.style.display = "none";
+
+        const fileUrl = previewData.docx_stream_url || previewData.stream_url || (versionId ? `/api/versions/${encodeURIComponent(versionId)}/file` : `/api/resumes/${encodeURIComponent(docId)}/stream`);
+        const resp = await fetch(fileUrl);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status} loading original Word document`);
+        const arrayBuffer = await resp.arrayBuffer();
+
+        paperSheet.innerHTML = "";
+        await window.docx.renderAsync(arrayBuffer, paperSheet, null, {
+          className: "docx",
+          inWrapper: true,
+          ignoreWidth: false,
+          ignoreHeight: false,
+          breakPages: true,
+          useBase64URL: true
+        });
+
+        // Query both .docx-wrapper > section.docx and .docx-viewer-wrapper > section.docx-viewer or section.docx
+        const pageSections = paperSheet.querySelectorAll(".docx-wrapper > section.docx, .docx-viewer-wrapper > section.docx-viewer, section.docx, section.docx-viewer");
+        if (pageSections.length > 1) {
+          AppState.currentDocxPagesCount = pageSections.length;
+          AppState.currentDocxPageIndex = 0;
+
+          pageSections.forEach((sec, sIdx) => {
+            sec.setAttribute("data-page-index", sIdx);
+            sec.id = `preview-docx-page-${sIdx}`;
+            if (sIdx < pageSections.length - 1) {
+              const cutDiv = document.createElement("div");
+              cutDiv.className = "docx-page-cut-divider";
+              cutDiv.innerHTML = `
+                <div class="page-cut-line"></div>
+                <div class="page-cut-badge">
+                  <span class="page-cut-scissors">✂</span>
+                  <span class="page-cut-text">PAGE CUT &bull; NEXT PAGE (${sIdx + 2})</span>
+                </div>
+                <div class="page-cut-line"></div>
+              `;
+              sec.after(cutDiv);
+            }
+          });
+
+          if (pageControls) pageControls.style.display = "flex";
+          if (pageCounter) pageCounter.textContent = `Page 1 of ${pageSections.length}`;
+          if (pagePrev) {
+            pagePrev.disabled = true;
+            pagePrev.style.display = "inline-flex";
+          }
+          if (pageNext) {
+            pageNext.disabled = false;
+            pageNext.style.display = "inline-flex";
+          }
+
+          if (inappContainer) {
+            inappContainer.onscroll = () => {
+              const containerTop = inappContainer.scrollTop + 120;
+              let currentSec = 0;
+              pageSections.forEach((sec, sIdx) => {
+                if (sec.offsetTop <= containerTop) {
+                  currentSec = sIdx;
+                }
+              });
+              if (currentSec !== AppState.currentDocxPageIndex) {
+                AppState.currentDocxPageIndex = currentSec;
+                if (pageCounter) pageCounter.textContent = `Page ${currentSec + 1} of ${pageSections.length}`;
+                if (pagePrev) pagePrev.disabled = (currentSec <= 0);
+                if (pageNext) pageNext.disabled = (currentSec >= pageSections.length - 1);
+              }
+            };
+          }
+        } else {
+          AppState.currentDocxPagesCount = 1;
+          AppState.currentDocxPageIndex = 0;
+          if (pageControls) pageControls.style.display = "none";
+        }
+
+        if (inappContainer) inappContainer.scrollTop = 0;
+        const contentBox = document.getElementById("preview-content-box");
+        if (contentBox) contentBox.scrollTop = 0;
+        return;
+      } catch (docxErr) {
+        console.warn("Native DOCX rendering failed, falling back to server-rendered pages:", docxErr);
+      }
+    }
+
+    // Fallback for text resumes
+    if (frame) frame.style.display = "none";
+    if (inappContainer) inappContainer.style.display = "block";
+
     if (previewData && previewData.success && previewData.pages && previewData.pages.length > 0) {
+      AppState.currentDocxPagesCount = 0;
       AppState.currentPreviewPages = previewData.pages;
       AppState.currentPreviewPageIndex = 0;
 
       renderDocumentPage(0);
 
-      if (previewData.total_pages > 1 && pageControls) {
+      if (pageControls) {
         pageControls.style.display = "flex";
-        if (pageCounter) pageCounter.textContent = `Page 1 of ${previewData.total_pages}`;
+        const total = Math.max(1, previewData.total_pages || AppState.currentPreviewPages.length || 1);
+        if (pageCounter) pageCounter.textContent = `Page 1 of ${total}`;
         if (pagePrev) pagePrev.disabled = true;
-        if (pageNext) pageNext.disabled = false;
-      } else if (pageControls) {
-        pageControls.style.display = "none";
+        if (pageNext) pageNext.disabled = (total <= 1);
       }
     } else {
       if (paperSheet) {
         paperSheet.innerHTML = `
           <div style="padding:2.5rem 1.5rem; text-align:center; color:var(--text-muted);">
-            <div style="font-size:2rem; margin-bottom:0.5rem;">📄</div>
             <div style="font-weight:600; margin-bottom:0.25rem;">Resume document preview unavailable</div>
             <div style="font-size:0.8rem; color:var(--text-dim);">${escapeHtml(previewData?.error || "Document content could not be displayed")}</div>
           </div>
@@ -318,12 +546,18 @@ async function renderResumePreviewAtIndex(idx) {
     if (paperSheet) {
       paperSheet.innerHTML = `
         <div style="padding:2.5rem 1.5rem; text-align:center; color:var(--danger);">
-          <div style="font-size:2rem; margin-bottom:0.5rem;">⚠️</div>
           <div>Failed to load document preview: ${escapeHtml(err.message)}</div>
         </div>
       `;
     }
   }
+}
+
+/**
+ * Retained as clean helper for page cuts
+ */
+function applyPageCutsToDocxPreview(container) {
+  // Page cuts applied directly during render
 }
 
 function renderDocumentPage(pageIndex) {
@@ -333,9 +567,30 @@ function renderDocumentPage(pageIndex) {
 
   paperSheet.innerHTML = AppState.currentPreviewPages[pageIndex];
   if (inappContainer) inappContainer.scrollTop = 0;
+  const contentBox = document.getElementById("preview-content-box");
+  if (contentBox) contentBox.scrollTop = 0;
 }
 
 function changeDocumentPage(direction) {
+  if (AppState.currentDocxPagesCount && AppState.currentDocxPagesCount > 1) {
+    const nextIdx = AppState.currentDocxPageIndex + direction;
+    if (nextIdx >= 0 && nextIdx < AppState.currentDocxPagesCount) {
+      AppState.currentDocxPageIndex = nextIdx;
+      const targetSec = document.getElementById(`preview-docx-page-${nextIdx}`);
+      const inappContainer = document.getElementById("preview-inapp-container");
+      if (targetSec && inappContainer) {
+        targetSec.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+      const pageCounter = document.getElementById("preview-page-counter");
+      const pagePrev = document.getElementById("preview-page-prev");
+      const pageNext = document.getElementById("preview-page-next");
+      if (pageCounter) pageCounter.textContent = `Page ${nextIdx + 1} of ${AppState.currentDocxPagesCount}`;
+      if (pagePrev) pagePrev.disabled = (nextIdx <= 0);
+      if (pageNext) pageNext.disabled = (nextIdx >= AppState.currentDocxPagesCount - 1);
+    }
+    return;
+  }
+
   if (!AppState.currentPreviewPages || !AppState.currentPreviewPages.length) return;
   const newIndex = AppState.currentPreviewPageIndex + direction;
   if (newIndex >= 0 && newIndex < AppState.currentPreviewPages.length) {
@@ -438,6 +693,33 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   });
 
+  document.querySelectorAll(".modal-overlay").forEach(overlay => {
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) {
+        overlay.classList.remove("active");
+      }
+    });
+  });
+
+  // Prevent default browser drag-and-drop navigation / page reload when dropping files
+  window.addEventListener("dragover", (e) => {
+    e.preventDefault();
+  }, false);
+
+  window.addEventListener("drop", (e) => {
+    e.preventDefault();
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      if (AppState.currentTab === "improvement") {
+        handleImprovementFilesUpload(e.dataTransfer.files);
+      } else if (AppState.currentTab === "matching") {
+        handleFilesUpload(e.dataTransfer.files);
+      } else {
+        switchTab("improvement");
+        handleImprovementFilesUpload(e.dataTransfer.files);
+      }
+    }
+  }, false);
+
   // Load initial data
   await refreshDataCaches();
   loadDashboard();
@@ -446,11 +728,14 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 async function refreshDataCaches() {
   try {
-    AppState.resumes = await API.getResumes();
-    AppState.jobs = await API.getJobs();
-    try {
-      AppState.allFollowups = await API.getFollowups() || [];
-    } catch (_) {}
+    const [resumes, jobs, followups] = await Promise.all([
+      API.getResumes(),
+      API.getJobs(),
+      API.getFollowups().catch(() => [])
+    ]);
+    AppState.resumes = resumes || [];
+    AppState.jobs = jobs || [];
+    AppState.allFollowups = followups || [];
     updateTabBadges();
     renderMatchExistingResumes();
     renderImproveExistingResumes();
@@ -479,11 +764,6 @@ async function updateTabBadges() {
         notifBadge.textContent = notifs.length;
       }
     }
-    const summary = await API.getDashboardSummary();
-    const fuBadge = document.getElementById("badge-followups-count");
-    if (fuBadge) {
-      fuBadge.textContent = summary.follow_ups_due;
-    }
   } catch (e) {}
 }
 
@@ -499,48 +779,188 @@ async function loadDashboard() {
     document.getElementById("stat-followups-due").textContent = summary.follow_ups_due;
     document.getElementById("stat-active-jobs").textContent = summary.active_jobs;
 
-    // Follow-ups badge
+    // Follow-ups tab badge
     const fuBadge = document.getElementById("badge-followups-count");
     if (fuBadge) fuBadge.textContent = summary.follow_ups_due;
 
-    // Top Skills Badges
-    const skillsContainer = document.getElementById("dashboard-skills-cloud");
-    if (skillsContainer) {
-      skillsContainer.innerHTML = "";
-      Object.entries(summary.top_skills_distribution || {}).forEach(([skill, count]) => {
-        const tag = document.createElement("span");
-        tag.className = "tag-matched";
-        tag.style.fontSize = "0.82rem";
-        tag.textContent = `${skill} (${count})`;
-        skillsContainer.appendChild(tag);
-      });
-      if (!Object.keys(summary.top_skills_distribution || {}).length) {
-        skillsContainer.innerHTML = "<p class='text-dim'>No candidate skills registered yet.</p>";
-      }
-    }
+    // 1. Render Follow-ups Status Pie / Donut Chart
+    renderDashboardFollowupsPieChart(summary.followup_status_distribution || {});
 
-    // Recent Activity Table
-    const actBody = document.getElementById("dashboard-activity-body");
-    if (actBody) {
-      actBody.innerHTML = "";
-      (summary.recent_activity || []).slice(0, 6).forEach(act => {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${act.doc_id && act.doc_id !== "System" ? `<button type="button" class="doc-id-link" onclick="openCandidateRemarksModal('${act.doc_id}')" title="Click to view remarks for ${act.doc_id}"><strong>${act.doc_id}</strong> <span style="font-size:0.75rem;">💬</span></button>` : `<strong>${act.doc_id || "System"}</strong>`}</td>
-          <td><span class="file-status-badge badge-ready">${act.action_type}</span></td>
-          <td>${act.notes || "Recorded action"}</td>
-          <td>${act.owner_id}</td>
-          <td>${formatDate(act.timestamp)}</td>
-        `;
-        actBody.appendChild(tr);
-      });
-      if (!summary.recent_activity?.length) {
-        actBody.innerHTML = "<tr><td colspan='5' class='text-dim text-center'>No recorded actions yet.</td></tr>";
-      }
-    }
+    // 2. Render Recent Activity Logs Table
+    renderDashboardActivityLogs(summary.recent_activity || []);
+
   } catch (err) {
+    console.warn("Failed to load dashboard statistics:", err);
     showToast("Failed to load dashboard statistics", "error");
   }
+}
+
+function renderDashboardActivityLogs(activities) {
+  const actBody = document.getElementById("dashboard-activity-body");
+  if (!actBody) return;
+  actBody.innerHTML = "";
+
+  if (!activities || !activities.length) {
+    actBody.innerHTML = "<tr><td colspan='4' class='text-dim text-center' style='padding:2rem;'>No recorded candidate actions yet.</td></tr>";
+    return;
+  }
+
+  const actionBadgeMap = {
+    "upload_resume": { label: "Uploaded", cls: "badge-ready" },
+    "uploaded": { label: "Uploaded", cls: "badge-ready" },
+    "reviewed": { label: "Reviewed", cls: "badge-ready" },
+    "shortlisted": { label: "Shortlisted", cls: "badge-primary" },
+    "contacted": { label: "Contacted", cls: "badge-primary" },
+    "snooze": { label: "Snoozed", cls: "badge-warning" },
+    "hired": { label: "Hired", cls: "badge-ready" },
+    "rejected": { label: "Rejected", cls: "badge-danger" },
+    "remark_added": { label: "Remark", cls: "badge-ready" }
+  };
+
+  activities.slice(0, 8).forEach(act => {
+    const tr = document.createElement("tr");
+    const badgeInfo = actionBadgeMap[act.action_type] || { label: (act.action_type || "Action").replace("_", " "), cls: "badge-ready" };
+    const candName = act.candidate_name || (act.doc_id ? `Candidate ${act.doc_id}` : "System");
+    const hasDoc = Boolean(act.doc_id && act.doc_id !== "System");
+
+    tr.innerHTML = `
+      <td>
+        <div style="display:flex; flex-direction:column; gap:2px;">
+          ${hasDoc 
+            ? `<button type="button" class="doc-id-link" onclick="openCandidateRemarksModal('${act.doc_id}')" style="text-align:left; font-weight:600; color:var(--primary); font-size:0.84rem;" title="Click to view candidate remarks">${escapeHtml(candName)}</button>
+               <span style="font-size:0.72rem; color:var(--text-dim); font-family:monospace;">${escapeHtml(act.doc_id)}</span>`
+            : `<strong style="font-size:0.84rem;">${escapeHtml(candName)}</strong>`}
+        </div>
+      </td>
+      <td>
+        <span class="file-status-badge ${badgeInfo.cls}" style="font-size:0.74rem;">${escapeHtml(badgeInfo.label)}</span>
+      </td>
+      <td style="font-size:0.82rem; color:var(--text-muted); max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(act.notes || '')}">
+        ${escapeHtml(act.notes || "Recorded recruitment event")}
+      </td>
+      <td style="font-size:0.75rem; color:var(--text-dim); white-space:nowrap;">
+        ${formatDate(act.timestamp)}
+      </td>
+    `;
+    actBody.appendChild(tr);
+  });
+}
+
+function renderDashboardFollowupsPieChart(distribution) {
+  const svg = document.getElementById("dashboard-followups-svg");
+  const legend = document.getElementById("dashboard-followups-legend");
+  const centerVal = document.getElementById("donut-center-val");
+  const centerLbl = document.getElementById("donut-center-lbl");
+  const totalBadge = document.getElementById("piechart-total-badge");
+  if (!svg || !legend) return;
+
+  const entries = Object.entries(distribution || {}).filter(([_, count]) => count > 0);
+  const total = entries.reduce((sum, [_, count]) => sum + count, 0);
+
+  if (totalBadge) totalBadge.textContent = `${total} Total`;
+  if (centerVal) centerVal.textContent = total;
+  if (centerLbl) centerLbl.textContent = "FOLLOW-UPS";
+
+  if (total === 0) {
+    svg.innerHTML = `
+      <circle cx="100" cy="100" r="70" fill="transparent" stroke="var(--border-subtle)" stroke-width="24" stroke-dasharray="439.82 439.82" />
+    `;
+    legend.innerHTML = `
+      <div style="text-align:center; padding:1.5rem 0.5rem; color:var(--text-muted); font-size:0.82rem;">
+        No active follow-ups or overdue reviews in the pipeline.
+      </div>
+    `;
+    return;
+  }
+
+  // Curated color map
+  const colorMap = {
+    "Overdue": "#ef4444",
+    "Pending Review": "#f59e0b",
+    "Shortlisted": "#6366f1",
+    "Contacted": "#06b6d4",
+    "Snoozed": "#8b5cf6",
+    "Hired": "#10b981",
+    "Rejected": "#dc2626",
+    "Stale Inactive": "#64748b"
+  };
+  const fallbackColors = ["#3b82f6", "#ec4899", "#14b8a6", "#f97316", "#84cc16"];
+
+  const radius = 70;
+  const circumference = 2 * Math.PI * radius; // ~439.82
+  let cumulativeOffset = 0;
+
+  svg.innerHTML = "";
+  legend.innerHTML = "";
+
+  entries.forEach(([status, count], idx) => {
+    const fraction = count / total;
+    const strokeDash = fraction * circumference;
+    const strokeOffset = cumulativeOffset * circumference;
+    const color = colorMap[status] || fallbackColors[idx % fallbackColors.length];
+    const pct = Math.round(fraction * 100);
+
+    // SVG Circle Segment
+    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    circle.setAttribute("cx", "100");
+    circle.setAttribute("cy", "100");
+    circle.setAttribute("r", radius);
+    circle.setAttribute("class", "donut-segment");
+    circle.setAttribute("stroke", color);
+    circle.setAttribute("stroke-dasharray", `${strokeDash} ${circumference}`);
+    circle.setAttribute("stroke-dashoffset", `-${strokeOffset}`);
+    circle.setAttribute("data-status", status);
+    circle.setAttribute("data-count", count);
+    circle.setAttribute("data-pct", pct);
+
+    // Tooltip
+    const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    title.textContent = `${status}: ${count} (${pct}%)`;
+    circle.appendChild(title);
+
+    svg.appendChild(circle);
+
+    // Legend Item
+    const item = document.createElement("div");
+    item.className = "donut-legend-item";
+    item.id = `donut-legend-${idx}`;
+    item.innerHTML = `
+      <div class="donut-legend-left">
+        <span class="donut-legend-dot" style="background:${color};"></span>
+        <span style="font-weight:600; color:var(--text-main); font-size:0.8rem;">${status}</span>
+      </div>
+      <div>
+        <span class="donut-legend-count">${count}</span>
+        <span class="donut-legend-pct">(${pct}%)</span>
+      </div>
+    `;
+
+    // Interactivity
+    const activate = () => {
+      circle.style.strokeWidth = "32";
+      circle.style.opacity = "1";
+      item.classList.add("active");
+      if (centerVal) centerVal.textContent = count;
+      if (centerLbl) centerLbl.textContent = status.toUpperCase();
+    };
+    const deactivate = () => {
+      circle.style.strokeWidth = "26";
+      circle.style.opacity = "";
+      item.classList.remove("active");
+      if (centerVal) centerVal.textContent = total;
+      if (centerLbl) centerLbl.textContent = "FOLLOW-UPS";
+    };
+
+    circle.addEventListener("mouseenter", activate);
+    circle.addEventListener("mouseleave", deactivate);
+    item.addEventListener("mouseenter", activate);
+    item.addEventListener("mouseleave", deactivate);
+    item.addEventListener("click", () => switchTab("followups"));
+
+    legend.appendChild(item);
+
+    cumulativeOffset += fraction;
+  });
 }
 
 // ==========================================
@@ -695,15 +1115,6 @@ function renderUploadedFilesList() {
   const countPill = document.getElementById("match-uploaded-count-pill");
   const clearBtn = document.getElementById("btn-clear-all-uploads");
 
-  // Keep in sync with actual existing resumes in database
-  if (AppState.resumes && AppState.resumes.length) {
-    const existingDocIds = new Set(AppState.resumes.map(r => r.doc_id));
-    AppState.uploadedResumes = AppState.uploadedResumes.filter(item => {
-      return !item.doc_id || existingDocIds.has(item.doc_id);
-    });
-    saveUploadedResumesToStorage();
-  }
-
   const uploadedCount = AppState.uploadedResumes.length;
 
   if (countPill) {
@@ -739,7 +1150,6 @@ function renderUploadedFilesList() {
 
     row.innerHTML = `
       <div style="display:flex; align-items:center; gap:0.65rem; min-width:0; flex:1; margin-right:0.75rem;">
-        <span style="font-size:1.15rem; flex-shrink:0;">📄</span>
         <div style="min-width:0; overflow:hidden;">
           <div style="font-weight:600; color:#fff; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(item.filename)}">
             ${escapeHtml(displayName)}
@@ -756,7 +1166,7 @@ function renderUploadedFilesList() {
           Preview
         </button>
         <button type="button" class="btn btn-danger btn-sm" onclick="removeUploadedResume('${item.doc_id || ''}', '${escapedFilename}', ${idx})" title="Remove this uploaded resume" style="font-size:0.75rem; padding:0.25rem 0.6rem; border-radius:var(--radius-sm); display:inline-flex; align-items:center; gap:0.25rem;">
-          🗑️ Remove
+          Remove
         </button>
       </div>
     `;
@@ -874,58 +1284,61 @@ function saveUploadedResumesToStorage() {
 
 function removeUploadedResume(docId, filename, index) {
   const displayName = filename || docId || "uploaded resume";
-  showConfirmModal(
-    "Remove Uploaded Resume",
-    `Are you sure you want to remove and delete "${displayName}"? It will be removed from this candidate search and permanently deleted from the database.`,
-    async () => {
-      try {
-        if (docId) {
-          await API.deleteResume(docId);
-        }
-        if (docId) {
-          AppState.uploadedResumes = AppState.uploadedResumes.filter(r => r.doc_id !== docId);
-        } else if (typeof index === "number") {
-          AppState.uploadedResumes.splice(index, 1);
-        }
-        saveUploadedResumesToStorage();
-        showToast(`Resume "${displayName}" removed successfully`, "success");
-        await refreshDataCaches();
-        renderUploadedFilesList();
-        validateMatchForm();
-      } catch (err) {
-        showToast(`Failed to remove resume: ${err.message}`, "error");
-      }
-    }
-  );
+  // Scoped exclusively to Find Candidates tab temporary display list.
+  // Must NOT delete from IKM/DMS, must NOT delete from Resume Library, must NOT call deleteResume API.
+  if (docId) {
+    AppState.uploadedResumes = AppState.uploadedResumes.filter(r => r.doc_id !== docId);
+  } else if (typeof index === "number") {
+    AppState.uploadedResumes.splice(index, 1);
+  }
+  saveUploadedResumesToStorage();
+  showToast(`Resume "${displayName}" removed from search list`, "info");
+  renderUploadedFilesList();
+  validateMatchForm();
 }
 
 function clearAllUploadedResumes() {
-  if (!AppState.uploadedResumes.length) return;
-  showConfirmModal(
-    "Clear All Uploaded Resumes",
-    `Are you sure you want to remove all ${AppState.uploadedResumes.length} uploaded resume(s)? They will be permanently removed from this search and database.`,
-    async () => {
-      try {
-        for (const item of AppState.uploadedResumes) {
-          if (item.doc_id) {
-            try { await API.deleteResume(item.doc_id); } catch (e) { console.warn(e); }
-          }
-        }
-        AppState.uploadedResumes = [];
-        saveUploadedResumesToStorage();
-        showToast("All uploaded resumes removed", "info");
-        await refreshDataCaches();
-        renderUploadedFilesList();
-        validateMatchForm();
-      } catch (err) {
-        showToast(`Failed to clear resumes: ${err.message}`, "error");
-      }
-    }
-  );
+  // Clear Find Candidates uploaded resumes from screen display
+  AppState.uploadedResumes = [];
+  saveUploadedResumesToStorage();
+
+  // Clear candidate selections from existing dropdown and search criteria
+  AppState.selectedExistingMatchDocIds.clear();
+  AppState.activeMatchResults = null;
+
+  const fileInput = document.getElementById("match-file-input");
+  if (fileInput) fileInput.value = "";
+
+  const resultsContainer = document.getElementById("match-results-container");
+  if (resultsContainer) resultsContainer.innerHTML = "";
+
+  const jobSelect = document.getElementById("match-job-select");
+  if (jobSelect) jobSelect.value = "";
+
+  const jobDesc = document.getElementById("match-job-desc");
+  if (jobDesc) jobDesc.value = "";
+
+  renderUploadedFilesList();
+  updateMatchSelectedCountBadge();
+  renderMatchExistingResumes();
+  showToast("Candidate selection cleared from search.", "info");
+  validateMatchForm();
 }
 
 async function handleFilesUpload(fileList) {
+  if (!fileList || !fileList.length) return;
   showToast(`Uploading ${fileList.length} resume(s)...`, "info");
+
+  const progressContainer = document.getElementById("match-upload-progress");
+  if (progressContainer) {
+    progressContainer.innerHTML = `
+      <div class="upload-loading-card" style="margin-top:0.5rem; margin-bottom:0.75rem;">
+        <div class="spinner"></div>
+        <div style="font-weight:700; font-size:0.92rem; color:var(--text-main);">Uploading & Indexing ${fileList.length} Resume(s)...</div>
+        <div style="font-size:0.78rem; color:var(--text-muted);">Extracting metadata & storing in IKM Platform</div>
+      </div>
+    `;
+  }
 
   const formData = new FormData();
   for (let i = 0; i < fileList.length; i++) {
@@ -966,6 +1379,7 @@ async function handleFilesUpload(fileList) {
     validateMatchForm();
   } catch (err) {
     showToast(`Upload failed: ${err.message}`, "error");
+    renderUploadedFilesList();
   }
 }
 
@@ -1134,18 +1548,10 @@ function renderMatchResults(data, evaluatedUploadedCount = null) {
           <button class="btn btn-secondary btn-sm" onclick="openResumePreview('${cand.doc_id}', getMatchResultsPreviewList())">Preview</button>
           <button class="btn btn-secondary btn-sm" onclick="launchImprovementForCandidate('${cand.doc_id}')">Improve Resume</button>
         </div>
-        <div class="actions-group" id="actions-group-${cand.doc_id}">
-          <button type="button" class="btn btn-secondary btn-sm" onclick="viewCandidateDetailsModal('${cand.doc_id}')" title="View candidate and contact details" style="padding:0.25rem 0.55rem; font-size:0.95rem; line-height:1;">👁️</button>
-          <button type="button" class="btn btn-secondary btn-sm candidate-action-btn btn-action-shortlist ${currentStatus === 'shortlisted' ? 'active-shortlisted' : ''}" 
-            onclick="toggleCandidateAction('${cand.doc_id}', 'shortlist', this)">Shortlist</button>
-          <button type="button" class="btn btn-secondary btn-sm candidate-action-btn btn-action-contacted ${currentStatus === 'contacted' ? 'active-contacted' : ''}" 
-            onclick="toggleCandidateAction('${cand.doc_id}', 'contacted', this)">Contacted</button>
-          <button type="button" class="btn btn-secondary btn-sm candidate-action-btn btn-action-reviewed ${currentStatus === 'reviewed' ? 'active-reviewed' : ''}" 
-            onclick="toggleCandidateAction('${cand.doc_id}', 'reviewed', this)">Mark Reviewed</button>
-          <button type="button" class="btn btn-secondary btn-sm candidate-action-btn btn-action-snooze ${currentStatus === 'in_progress' || currentStatus === 'snooze' ? 'active-snoozed' : ''}" 
-            onclick="toggleCandidateAction('${cand.doc_id}', 'snooze', this)">Snooze</button>
-          <button type="button" class="btn btn-secondary btn-sm candidate-action-btn btn-action-hired ${currentStatus === 'hired' ? 'active-hired' : ''}" 
-            onclick="toggleCandidateAction('${cand.doc_id}', 'hired', this)" title="Mark candidate as Hired">Hired</button>
+        <div class="actions-group" id="actions-group-${cand.doc_id}" style="display:flex; align-items:center; gap:0.45rem;">
+          <span class="file-status-badge badge-${currentStatus}" id="cand-status-badge-${cand.doc_id}" style="font-size:0.75rem; text-transform:capitalize;">${currentStatus.replace('_', ' ')}</span>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="viewCandidateDetailsModal('${cand.doc_id}')" title="View candidate and contact details" style="padding:0.3rem 0.55rem; display:inline-flex; align-items:center; justify-content:center;">${SVG_EYE_ICON}</button>
+          <button type="button" class="btn btn-primary btn-sm" onclick="openActionModal('${cand.doc_id}')" title="Record recruiter action & notes">Action</button>
         </div>
       </div>
     `;
@@ -1245,66 +1651,131 @@ async function toggleCandidateAction(docId, actionType, buttonEl) {
 }
 
 function showScoreBreakdownModal(docId) {
-  const cand = AppState.activeMatchResults?.results?.find(r => r.doc_id === docId);
-  if (!cand) return;
+  let cand = AppState.activeMatchResults?.results?.find(r => String(r.doc_id) === String(docId) || r.doc_id === docId);
+  if (!cand && AppState.activeMatchResults?.results?.length) {
+    cand = AppState.activeMatchResults.results.find(r => r.candidate_label === docId || r.candidate_name === docId || r.full_name === docId);
+  }
+  if (!cand) {
+    console.warn("Candidate not found for breakdown modal:", docId);
+    showToast("Candidate details could not be found for score breakdown", "warning");
+    return;
+  }
 
   const content = document.getElementById("score-modal-content");
-  const b = cand.score_breakdown;
+  if (!content) return;
+
+  let b = cand.score_breakdown || {};
+  if (typeof b === "string") {
+    try { b = JSON.parse(b); } catch (e) { b = {}; }
+  }
+
+  const mand = b.mandatory_requirements || {};
+  const tech = b.technical_skills || {};
+  const exp = b.experience_and_projects || {};
+  const edu = b.education_credentials || {};
+  const ev = b.evidence_quality || {};
+
+  const getWeightedPoints = (item, defaultWeight) => {
+    if (item && item.score_weighted !== undefined && item.score_weighted !== null && !isNaN(Number(item.score_weighted))) {
+      return Number(item.score_weighted);
+    }
+    const raw = Number(item?.score);
+    if (!isNaN(raw)) {
+      return Math.round(raw * defaultWeight * 10) / 10;
+    }
+    return 0;
+  };
+
+  const mandPts = getWeightedPoints(mand, 0.35);
+  const techPts = getWeightedPoints(tech, 0.25);
+  const expPts = getWeightedPoints(exp, 0.20);
+  const eduPts = getWeightedPoints(edu, 0.10);
+  const evPts = getWeightedPoints(ev, 0.10);
+
+  let overallScore = 0;
+  if (cand.internal_match_score !== undefined && cand.internal_match_score !== null && !isNaN(cand.internal_match_score)) {
+    overallScore = cand.internal_match_score;
+  } else if (cand.score !== undefined && cand.score !== null && !isNaN(cand.score)) {
+    overallScore = Math.round(cand.score);
+  } else {
+    // Graceful calculation from component points if overall score was not serialized
+    overallScore = Math.round(mandPts + techPts + expPts + eduPts + evPts);
+  }
+
+  const displayName = cand.full_name || cand.candidate_name || cand.candidate_label || cand.doc_id;
 
   content.innerHTML = `
-    <h3 style="margin-bottom:1rem; font-family:var(--font-heading);">${cand.candidate_label} — Internal Score Breakdown</h3>
-    <div style="font-size:0.84rem; color:var(--text-muted); margin-bottom:1.2rem;">
-      Score is computed across 5 weighted dimensions based on documented evidence.
+    <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:0.3rem;">
+      <h3 style="font-family:var(--font-heading); font-size:1.1rem; font-weight:700; margin:0;">${escapeHtml(displayName)} — Score Breakdown</h3>
+      <div style="font-family:var(--font-heading); font-size:1.45rem; font-weight:800; color:var(--primary);">${overallScore} <span style="font-size:0.9rem; color:var(--text-dim); font-weight:600;">/ 100</span></div>
+    </div>
+    <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:0.55rem;">
+      Diagnostic evaluation across core requirements, technical skills, experience depth, education, and documented evidence.
     </div>
 
-    <div style="display:flex; flex-direction:column; gap:0.9rem;">
-      <div style="background:rgba(255,255,255,0.03); padding:0.8rem; border-radius:8px;">
-        <div style="display:flex; justify-content:space-between; font-weight:600;">
-          <span>1. Mandatory Requirements (Weight 35%)</span>
-          <span style="color:var(--success);">${b.mandatory_requirements.score} / ${b.mandatory_requirements.max} pts</span>
+    <div style="display:flex; flex-direction:column; gap:0.4rem;">
+      <!-- 1. Mandatory Requirements -->
+      <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); padding:0.5rem 0.75rem; border-radius:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; font-weight:700; margin-bottom:0.15rem;">
+          <span style="color:#f8fafc; font-size:0.88rem;">Mandatory Requirements</span>
+          <span style="color:var(--success); font-size:0.98rem; font-weight:800;">${mandPts.toFixed(1)} / 35</span>
         </div>
-        <div style="font-size:0.78rem; color:var(--text-dim); margin-top:0.2rem;">
-          Matched ${b.mandatory_requirements.matched_count} of ${b.mandatory_requirements.total_count} core requirements
+        <div style="font-size:0.76rem; color:var(--text-muted); line-height:1.35;">
+          ${escapeHtml(mand.justification || `Matched ${mand.matched_count || 0} of ${mand.total_count || 1} core prerequisites.`)}
+        </div>
+        ${mand.missing && mand.missing.length ? `
+          <div style="font-size:0.72rem; color:#fca5a5; margin-top:0.15rem;">
+            <strong>Unsatisfied Mandatory:</strong> ${mand.missing.map(m => escapeHtml(typeof m === 'object' ? (m.requirement || JSON.stringify(m)) : m)).join(", ")}
+          </div>
+        ` : ''}
+      </div>
+
+      <!-- 2. Technical Skills -->
+      <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); padding:0.5rem 0.75rem; border-radius:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; font-weight:700; margin-bottom:0.15rem;">
+          <span style="color:#f8fafc; font-size:0.88rem;">Technical Skills</span>
+          <span style="color:var(--accent-cyan); font-size:0.98rem; font-weight:800;">${techPts.toFixed(1)} / 25</span>
+        </div>
+        <div style="font-size:0.76rem; color:var(--text-muted); line-height:1.35;">
+          ${escapeHtml(tech.justification || `Evaluated ${tech.matched_count || 0} of ${tech.total_count || 0} skills with project grounding.`)}
+        </div>
+        ${tech.missing && tech.missing.length ? `
+          <div style="font-size:0.72rem; color:var(--warning); margin-top:0.15rem;">
+            <strong>Missing Skills:</strong> ${tech.missing.map(m => escapeHtml(typeof m === 'object' ? (m.skill || JSON.stringify(m)) : m)).join(", ")}
+          </div>
+        ` : ''}
+      </div>
+
+      <!-- 3. Experience & Projects -->
+      <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); padding:0.5rem 0.75rem; border-radius:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; font-weight:700; margin-bottom:0.15rem;">
+          <span style="color:#f8fafc; font-size:0.88rem;">Experience &amp; Projects</span>
+          <span style="color:#c084fc; font-size:0.98rem; font-weight:800;">${expPts.toFixed(1)} / 20</span>
+        </div>
+        <div style="font-size:0.76rem; color:var(--text-muted); line-height:1.35;">
+          ${escapeHtml(exp.justification || `${exp.evaluated_items || 0} relevant career deliverables and artifacts evaluated.`)}
         </div>
       </div>
 
-      <div style="background:rgba(255,255,255,0.03); padding:0.8rem; border-radius:8px;">
-        <div style="display:flex; justify-content:space-between; font-weight:600;">
-          <span>2. Technical / Role Skills (Weight 25%)</span>
-          <span style="color:var(--accent-cyan);">${b.technical_skills.score} / ${b.technical_skills.max} pts</span>
+      <!-- 4. Education -->
+      <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); padding:0.5rem 0.75rem; border-radius:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; font-weight:700; margin-bottom:0.15rem;">
+          <span style="color:#f8fafc; font-size:0.88rem;">Education</span>
+          <span style="color:var(--warning); font-size:0.98rem; font-weight:800;">${eduPts.toFixed(1)} / 10</span>
         </div>
-        <div style="font-size:0.78rem; color:var(--text-dim); margin-top:0.2rem;">
-          Coverage: ${b.technical_skills.matched_count} of ${b.technical_skills.total_count} skills evidenced
-        </div>
-      </div>
-
-      <div style="background:rgba(255,255,255,0.03); padding:0.8rem; border-radius:8px;">
-        <div style="display:flex; justify-content:space-between; font-weight:600;">
-          <span>3. Relevant Experience & Projects (Weight 20%)</span>
-          <span style="color:#c084fc;">${b.experience_and_projects.score} / ${b.experience_and_projects.max} pts</span>
-        </div>
-        <div style="font-size:0.78rem; color:var(--text-dim); margin-top:0.2rem;">
-          ${b.experience_and_projects.evaluated_items} relevant project & experience artifacts
+        <div style="font-size:0.76rem; color:var(--text-muted); line-height:1.35;">
+          ${escapeHtml(edu.justification || `Documented Degree: ${edu.qualification || 'Not specified'}.`)}
         </div>
       </div>
 
-      <div style="background:rgba(255,255,255,0.03); padding:0.8rem; border-radius:8px;">
-        <div style="display:flex; justify-content:space-between; font-weight:600;">
-          <span>4. Education / Qualifications (Weight 10%)</span>
-          <span style="color:var(--warning);">${b.education_credentials.score} / ${b.education_credentials.max} pts</span>
+      <!-- 5. Evidence Quality -->
+      <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); padding:0.5rem 0.75rem; border-radius:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; font-weight:700; margin-bottom:0.15rem;">
+          <span style="color:#f8fafc; font-size:0.88rem;">Evidence Quality</span>
+          <span style="color:var(--success); font-size:0.98rem; font-weight:800;">${evPts.toFixed(1)} / 10</span>
         </div>
-        <div style="font-size:0.78rem; color:var(--text-dim); margin-top:0.2rem;">
-          Documented Degree: ${b.education_credentials.qualification}
-        </div>
-      </div>
-
-      <div style="background:rgba(255,255,255,0.03); padding:0.8rem; border-radius:8px;">
-        <div style="display:flex; justify-content:space-between; font-weight:600;">
-          <span>5. Evidence Quality & Specificity (Weight 10%)</span>
-          <span style="color:var(--success);">${b.evidence_quality.score} / ${b.evidence_quality.max} pts</span>
-        </div>
-        <div style="font-size:0.78rem; color:var(--text-dim); margin-top:0.2rem;">
-          ${b.evidence_quality.has_concrete_evidence ? "Verified text evidence present" : "Basic evidence"}
+        <div style="font-size:0.76rem; color:var(--text-muted); line-height:1.35;">
+          ${escapeHtml(ev.justification || (ev.has_concrete_evidence ? 'Verified text evidence and verifiable achievements present.' : 'Basic evidence recorded.'))}
         </div>
       </div>
     </div>
@@ -1312,6 +1783,7 @@ function showScoreBreakdownModal(docId) {
 
   openModal("score-breakdown-modal");
 }
+window.showScoreBreakdownModal = showScoreBreakdownModal;
 
 function viewOriginalResume(docId) {
   openResumePreview(docId);
@@ -1378,6 +1850,19 @@ function initImprovementTab() {
   renderImproveExistingResumes();
   renderImproveUploadedFilesList();
   setupImprovementDropzone();
+}
+
+function onImproveJobSelected() {
+  const jobSelect = document.getElementById("improve-job-select");
+  const customJd = document.getElementById("improve-custom-jd");
+  if (!jobSelect) return;
+  const jobId = jobSelect.value;
+  if (jobId) {
+    const selected = (AppState.jobs || []).find(j => j.job_id === jobId);
+    if (selected && customJd && !customJd.value.trim()) {
+      customJd.value = selected.preview_snippet || selected.raw_text || "";
+    }
+  }
 }
 
 function renderImproveExistingResumes() {
@@ -1569,7 +2054,6 @@ function renderImproveUploadedFilesList() {
 
     row.innerHTML = `
       <div style="display:flex; align-items:center; gap:0.65rem; min-width:0; flex:1; margin-right:0.75rem;">
-        <span style="font-size:1.15rem; flex-shrink:0;">📄</span>
         <div style="min-width:0; overflow:hidden;" onclick="selectResumeForImprovement('${item.doc_id}')" style="cursor:pointer;">
           <div style="font-weight:600; color:var(--text-main); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
             ${escapeHtml(displayName)}
@@ -1585,7 +2069,7 @@ function renderImproveUploadedFilesList() {
           Preview
         </button>
         <button type="button" class="btn btn-danger btn-sm" onclick="removeImproveUploadedResume(${idx})" style="font-size:0.75rem; padding:0.25rem 0.6rem; border-radius:var(--radius-sm);">
-          🗑️ Remove
+          Remove
         </button>
       </div>
     `;
@@ -1613,6 +2097,23 @@ function removeImproveUploadedResume(idx) {
 async function handleImprovementFilesUpload(fileList) {
   if (!fileList || !fileList.length) return;
   showToast(`Uploading ${fileList.length} resume(s)...`, "info");
+
+  const listContainer = document.getElementById("improve-uploaded-files-list");
+  if (listContainer) {
+    listContainer.innerHTML = `
+      <div class="upload-loading-card" style="margin-top:0.5rem; margin-bottom:0.75rem;">
+        <div class="spinner"></div>
+        <div style="font-weight:700; font-size:0.92rem; color:var(--text-main);">Uploading & Indexing ${fileList.length} Resume(s)...</div>
+        <div style="font-size:0.78rem; color:var(--text-muted);">Extracting metadata & storing in IKM Platform</div>
+      </div>
+    `;
+  }
+
+  // Fresh upload replaces previous batch selections to keep queue count accurate
+  AppState.improveUploadedResumes = [];
+  AppState.selectedExistingImproveDocIds.clear();
+  AppState.selectedResumeDocId = null;
+  AppState.appliedImprovements = {};
 
   const formData = new FormData();
   for (let i = 0; i < fileList.length; i++) {
@@ -1643,6 +2144,7 @@ async function handleImprovementFilesUpload(fileList) {
     renderImproveCandidatePersonalDetails();
   } catch (err) {
     showToast(`Upload failed: ${err.message}`, "error");
+    renderImproveUploadedFilesList();
   }
 }
 
@@ -1691,163 +2193,199 @@ function setupImprovementDropzone() {
   };
 }
 
-function launchImprovementForCandidate(docId) {
+async function launchImprovementForCandidate(docId) {
+  // Clear prior multi-resume state for a clean single-candidate improvement session
+  AppState.improveUploadedResumes = [];
+  AppState.selectedExistingImproveDocIds.clear();
   AppState.selectedResumeDocId = docId;
   AppState.selectedExistingImproveDocIds.add(docId);
+  AppState.currentImprovementBatchDocIds = [docId];
+  AppState.activeImprovementDocId = docId;
+  AppState.appliedImprovements = {};
+
+  // Retrieve current job description from Find Candidates (Matching tab)
+  const matchJobSelect = document.getElementById("match-job-select");
+  const matchJdTextarea = document.getElementById("match-jd-textarea");
+  const selectedJobId = (matchJobSelect && matchJobSelect.value) || AppState.selectedJobId || "";
+  const customJdText = (matchJdTextarea && matchJdTextarea.value) ? matchJdTextarea.value.trim() : "";
+
   switchTab("improvement");
+
   const sel = document.getElementById("improve-resume-select");
   if (sel) sel.value = docId;
+
+  // Apply the same job description automatically (selected job opening or custom written JD)
+  const improveJobSelect = document.getElementById("improve-job-select");
+  const improveCustomJd = document.getElementById("improve-custom-jd");
+
+  if (selectedJobId && improveJobSelect) {
+    improveJobSelect.value = selectedJobId;
+  }
+  if (customJdText && improveCustomJd) {
+    improveCustomJd.value = customJdText;
+  } else if (selectedJobId && improveCustomJd && !improveCustomJd.value.trim()) {
+    const jobObj = (AppState.jobs || []).find(j => j.job_id === selectedJobId);
+    if (jobObj && (jobObj.preview_snippet || jobObj.raw_text)) {
+      improveCustomJd.value = jobObj.preview_snippet || jobObj.raw_text;
+    }
+  }
+
   renderImproveExistingResumes();
+  renderImproveUploadedFilesList();
   updateImproveSelectedCountBadge();
-  fetchAndPopulateCandidatePII(docId);
+  await fetchAndPopulateCandidatePII(docId);
+
+  // Requirement 3: Automatically initiate improvement, apply changes, download and preview
+  const hasJd = (selectedJobId && improveJobSelect && improveJobSelect.value) ||
+                (improveCustomJd && improveCustomJd.value.trim().length >= 10);
+
+  if (hasJd) {
+    showToast("Starting automatic resume improvement workflow...", "info");
+    setTimeout(() => {
+      runResumeImprovementAnalysis();
+    }, 250);
+  } else {
+    showToast("Please select or enter a Job Description to start improving candidate's resume.", "warning");
+    if (improveJobSelect) improveJobSelect.focus();
+  }
 }
 
 // Candidate Personal & Contact Information (Dynamic Multi-Card)
 async function fetchAndPopulateCandidatePII(docId) {
   if (!docId) return;
-  if (!AppState.candidatePersonalDetails[docId]) {
-    try {
-      const pii = await API.getResumePII(docId);
-      const resumeObj = (AppState.resumes || []).find(r => r.doc_id === docId);
-      AppState.candidatePersonalDetails[docId] = {
-        name: pii.name || resumeObj?.full_name || resumeObj?.candidate_name || "",
-        role: pii.role || resumeObj?.profile?.role || "",
-        phone: pii.phone || "",
-        email: pii.email || "",
-        location: pii.address || pii.location || "",
-        links: pii.links || ""
-      };
-    } catch (err) {
-      console.warn(`Could not load PII for ${docId}:`, err);
-      const resumeObj = (AppState.resumes || []).find(r => r.doc_id === docId);
-      AppState.candidatePersonalDetails[docId] = {
-        name: resumeObj?.full_name || resumeObj?.candidate_name || resumeObj?.pii?.name || "",
-        role: resumeObj?.profile?.role || "",
-        phone: resumeObj?.pii?.phone || "",
-        email: resumeObj?.pii?.email || "",
-        location: resumeObj?.pii?.address || resumeObj?.pii?.location || "",
-        links: resumeObj?.pii?.links || ""
-      };
+  try {
+    const pii = await API.getResumePII(docId);
+    const resumeObj = (AppState.resumes || []).find(r => r.doc_id === docId);
+    let linksVal = pii.links || "";
+    if (!linksVal && (pii.linkedin || pii.github || pii.portfolio)) {
+      linksVal = [pii.linkedin, pii.github, pii.portfolio].filter(Boolean).join(" | ");
     }
+    AppState.candidatePersonalDetails[docId] = {
+      name: pii.name || resumeObj?.full_name || resumeObj?.candidate_name || "",
+      role: pii.title || pii.role || resumeObj?.profile?.title || resumeObj?.profile?.role || "",
+      phone: pii.phone || "",
+      email: pii.email || "",
+      location: pii.location || pii.address || "",
+      links: linksVal
+    };
+  } catch (err) {
+    console.warn(`Could not load PII for ${docId}:`, err);
+    const resumeObj = (AppState.resumes || []).find(r => r.doc_id === docId);
+    AppState.candidatePersonalDetails[docId] = {
+      name: resumeObj?.full_name || resumeObj?.candidate_name || resumeObj?.pii?.name || "",
+      role: resumeObj?.profile?.title || resumeObj?.profile?.role || "",
+      phone: resumeObj?.pii?.phone || "",
+      email: resumeObj?.pii?.email || "",
+      location: resumeObj?.pii?.location || resumeObj?.pii?.address || "",
+      links: resumeObj?.pii?.links || ""
+    };
   }
-  renderImproveCandidatePersonalDetails();
+  renderImproveCandidatePersonalDetails(docId);
 }
 
-async function renderImproveCandidatePersonalDetails() {
-  const container = document.getElementById("improve-personal-details-container");
+async function renderImproveCandidatePersonalDetails(targetDocId = null) {
+  const container = document.getElementById("active-candidate-personal-details-area") || 
+                    document.getElementById("improve-personal-details-container");
   if (!container) return;
 
-  // Aggregate all selected resumes
-  const selectedDocIds = new Set();
-  AppState.selectedExistingImproveDocIds.forEach(id => selectedDocIds.add(id));
-  (AppState.improveUploadedResumes || []).forEach(r => {
-    if (r.doc_id) selectedDocIds.add(r.doc_id);
-  });
-  if (AppState.selectedResumeDocId) {
-    selectedDocIds.add(AppState.selectedResumeDocId);
-  }
+  const docIdList = getSelectedImprovementDocIds();
+  const docId = targetDocId || AppState.activeImprovementDocId || docIdList[0];
 
-  const docIdList = Array.from(selectedDocIds);
-
-  if (!docIdList.length) {
-    container.innerHTML = `
-      <div class="card" style="padding:1.5rem; text-align:center; color:var(--text-muted); background:var(--bg-surface-subtle); border:1px dashed var(--border-subtle); border-radius:var(--radius-md);">
-        <div style="font-size:1.6rem; margin-bottom:0.4rem;">📋</div>
-        <div style="font-size:0.9rem; font-weight:600; color:var(--text-main); margin-bottom:0.25rem;">No Resumes Selected</div>
-        <div style="font-size:0.8rem;">Select one or more resumes above or upload new files to view and verify candidate contact details.</div>
-      </div>
-    `;
+  if (!docId) {
+    container.innerHTML = "";
     return;
   }
 
-  // Preload missing PII in background
-  docIdList.forEach(docId => {
-    if (!AppState.candidatePersonalDetails[docId]) {
-      const resumeObj = (AppState.resumes || []).find(r => r.doc_id === docId) ||
-                        (AppState.improveUploadedResumes || []).find(r => r.doc_id === docId);
-      AppState.candidatePersonalDetails[docId] = {
-        name: resumeObj?.full_name || resumeObj?.candidate_name || resumeObj?.pii?.name || "",
-        role: resumeObj?.profile?.role || "",
-        phone: resumeObj?.pii?.phone || "",
-        email: resumeObj?.pii?.email || "",
-        location: resumeObj?.pii?.address || resumeObj?.pii?.location || "",
-        links: resumeObj?.pii?.links || ""
-      };
-
-      API.getResumePII(docId).then(pii => {
-        if (pii) {
-          AppState.candidatePersonalDetails[docId] = {
-            name: pii.name || AppState.candidatePersonalDetails[docId].name,
-            role: pii.role || AppState.candidatePersonalDetails[docId].role,
-            phone: pii.phone || AppState.candidatePersonalDetails[docId].phone,
-            email: pii.email || AppState.candidatePersonalDetails[docId].email,
-            location: pii.address || pii.location || AppState.candidatePersonalDetails[docId].location,
-            links: pii.links || AppState.candidatePersonalDetails[docId].links
-          };
-          renderImproveCandidatePersonalDetails();
-        }
-      }).catch(() => {});
-    }
-  });
-
-  // Build separate card for every selected resume
-  let html = `<div style="display:flex; flex-direction:column; gap:1.25rem;">`;
-
-  docIdList.forEach((docId, index) => {
+  // Preload missing or fresh PII if not loaded yet
+  if (!AppState.candidatePersonalDetails[docId]) {
     const resumeObj = (AppState.resumes || []).find(r => r.doc_id === docId) ||
                       (AppState.improveUploadedResumes || []).find(r => r.doc_id === docId);
-    const filename = resumeObj?.original_filename || resumeObj?.filename || `${docId}.docx`;
-    const details = AppState.candidatePersonalDetails[docId] || {};
+    AppState.candidatePersonalDetails[docId] = {
+      name: resumeObj?.full_name || resumeObj?.candidate_name || resumeObj?.pii?.name || "",
+      role: resumeObj?.profile?.title || resumeObj?.profile?.role || "",
+      phone: resumeObj?.pii?.phone || "",
+      email: resumeObj?.pii?.email || "",
+      location: resumeObj?.pii?.location || resumeObj?.pii?.address || "",
+      links: resumeObj?.pii?.links || ""
+    };
 
-    const fields = [
-      { key: "name", label: "Full Name", placeholder: "e.g. Alex Morgan", val: details.name || "" },
-      { key: "role", label: "Professional Title / Role", placeholder: "e.g. Senior Software Engineer", val: details.role || "" },
-      { key: "phone", label: "Phone Number", placeholder: "e.g. +1 555-0199", val: details.phone || "" },
-      { key: "email", label: "Email Address", placeholder: "e.g. candidate@example.com", val: details.email || "" },
-      { key: "location", label: "Address / Location", placeholder: "e.g. San Francisco, CA", val: details.location || "" },
-      { key: "links", label: "Portfolio / LinkedIn Links", placeholder: "e.g. linkedin.com/in/profile", val: details.links || "" }
-    ];
+    API.getResumePII(docId).then(pii => {
+      if (pii) {
+        let linksVal = pii.links || "";
+        if (!linksVal && (pii.linkedin || pii.github || pii.portfolio)) {
+          linksVal = [pii.linkedin, pii.github, pii.portfolio].filter(Boolean).join(" | ");
+        }
+        AppState.candidatePersonalDetails[docId] = {
+          name: pii.name || AppState.candidatePersonalDetails[docId].name,
+          role: pii.title || pii.role || AppState.candidatePersonalDetails[docId].role,
+          phone: pii.phone || AppState.candidatePersonalDetails[docId].phone,
+          email: pii.email || AppState.candidatePersonalDetails[docId].email,
+          location: pii.location || pii.address || AppState.candidatePersonalDetails[docId].location,
+          links: linksVal || AppState.candidatePersonalDetails[docId].links
+        };
+        renderImproveCandidatePersonalDetails(docId);
+      }
+    }).catch(() => {});
+  }
 
-    html += `
-      <div class="card" id="cand-pii-card-${docId}" style="margin-bottom:0; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:1.2rem;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; padding-bottom:0.6rem; border-bottom:1px solid var(--border-subtle); flex-wrap:wrap; gap:0.5rem;">
-          <div style="display:flex; align-items:center; gap:0.6rem;">
-            <span style="font-size:1.2rem;">📄</span>
-            <div>
-              <span style="font-weight:700; font-size:0.95rem; color:var(--text-main);">Resume ${index + 1} &mdash; <span style="color:var(--primary); font-family:var(--font-mono);">${escapeHtml(filename)}</span></span>
-              <span class="candidate-doc-tag" style="margin-left:0.5rem;">ID: ${docId}</span>
-            </div>
-          </div>
-          <button type="button" class="btn btn-secondary btn-sm" onclick="openResumePreview('${docId}')" style="padding:0.25rem 0.65rem; font-size:0.75rem;">
-            👁️ Preview
+  const resumeObj = (AppState.resumes || []).find(r => r.doc_id === docId) ||
+                    (AppState.improveUploadedResumes || []).find(r => r.doc_id === docId);
+  const filename = resumeObj?.original_filename || resumeObj?.filename || `${docId}.docx`;
+  const details = AppState.candidatePersonalDetails[docId] || {};
+
+  const fields = [
+    { key: "name", label: "Full Name", placeholder: "e.g. Alex Morgan", val: details.name || "", required: true },
+    { key: "role", label: "Professional Title / Role", placeholder: "e.g. Senior Software Engineer", val: details.role || "", required: true },
+    { key: "phone", label: "Phone Number", placeholder: "e.g. +1 555-0199", val: details.phone || "", required: true },
+    { key: "email", label: "Email Address", placeholder: "e.g. candidate@example.com", val: details.email || "", required: true },
+    { key: "location", label: "Address / Location (Optional)", placeholder: "e.g. San Francisco, CA (Optional)", val: details.location || "", required: false },
+    { key: "links", label: "Portfolio / LinkedIn Links (Optional)", placeholder: "e.g. linkedin.com/in/profile (Optional)", val: details.links || "", required: false }
+  ];
+
+  container.innerHTML = `
+    <div class="card" id="cand-pii-card-${docId}" style="margin-bottom:1.25rem; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:1.2rem;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.85rem; padding-bottom:0.6rem; border-bottom:1px solid var(--border-subtle); flex-wrap:wrap; gap:0.5rem;">
+        <div>
+          <h3 style="font-family: var(--font-heading); font-size: 1.05rem; margin-bottom: 0.2rem; color:var(--text-main);">
+            Candidate Personal &amp; Contact Information
+          </h3>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin:0;">
+            Automatically populated for active candidate. Missing required fields are highlighted for verification.
+          </p>
+        </div>
+        <div style="display:flex; align-items:center; gap:0.6rem;">
+          <span class="candidate-doc-tag" style="margin:0;">ID: ${docId}</span>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="openResumePreview('${docId}')" style="padding:0.25rem 0.65rem; font-size:0.75rem; display:inline-flex; align-items:center; gap:0.35rem;">
+            ${SVG_EYE_ICON} Preview Original
           </button>
         </div>
-
-        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.85rem;">
-          ${fields.map(f => {
-            const isMissing = !f.val || f.val.trim() === "";
-            return `
-              <div class="form-group ${isMissing ? 'field-missing' : ''}" id="fg-${docId}-${f.key}" style="margin-bottom:0;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.3rem;">
-                  <label class="form-label" for="inp-${docId}-${f.key}" style="margin-bottom:0; font-size:0.78rem;">${f.label}</label>
-                  ${isMissing ? `<span class="missing-tag" id="tag-${docId}-${f.key}">Missing</span>` : ''}
-                </div>
-                <input type="text" id="inp-${docId}-${f.key}" 
-                  class="form-control ${isMissing ? 'input-missing' : ''}" 
-                  style="font-size:0.82rem; padding:0.4rem 0.65rem;"
-                  value="${escapeHtml(f.val)}" 
-                  placeholder="${isMissing ? 'Required — enter ' + f.label.toLowerCase() : f.placeholder}"
-                  oninput="onPersonalDetailsInputChange('${docId}', '${f.key}', this)">
-              </div>
-            `;
-          }).join("")}
-        </div>
       </div>
-    `;
-  });
 
-  html += `</div>`;
-  container.innerHTML = html;
+      <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.85rem;">
+        <span style="font-weight:700; font-size:0.95rem; color:var(--text-main);">Active Candidate Resume &mdash; <span style="color:var(--primary); font-family:var(--font-mono);">${escapeHtml(filename)}</span></span>
+      </div>
+
+      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.85rem;">
+        ${fields.map(f => {
+          const isMissing = f.required && (!f.val || f.val.trim() === "");
+          return `
+            <div class="form-group ${isMissing ? 'field-missing' : ''}" id="fg-${docId}-${f.key}" style="margin-bottom:0;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.3rem;">
+                <label class="form-label" for="inp-${docId}-${f.key}" style="margin-bottom:0; font-size:0.78rem;">${f.label}</label>
+                ${isMissing ? `<span class="missing-tag" id="tag-${docId}-${f.key}">Missing</span>` : ''}
+              </div>
+              <input type="text" id="inp-${docId}-${f.key}" 
+                class="form-control ${isMissing ? 'input-missing' : ''}" 
+                style="font-size:0.82rem; padding:0.4rem 0.65rem;"
+                value="${escapeHtml(f.val)}" 
+                placeholder="${isMissing ? 'Required — enter ' + f.label.toLowerCase() : f.placeholder}"
+                oninput="onPersonalDetailsInputChange('${docId}', '${f.key}', this)">
+            </div>
+          `;
+        }).join("")}
+      </div>
+    </div>
+  `;
 }
 
 function onPersonalDetailsInputChange(docId, field, inputEl) {
@@ -1859,6 +2397,14 @@ function onPersonalDetailsInputChange(docId, field, inputEl) {
 
   const fg = document.getElementById(`fg-${docId}-${field}`);
   const tag = document.getElementById(`tag-${docId}-${field}`);
+
+  // Optional fields never trigger missing badge
+  if (field === "location" || field === "links") {
+    inputEl.classList.remove("input-missing");
+    if (fg) fg.classList.remove("field-missing");
+    if (tag) tag.remove();
+    return;
+  }
 
   if (val && val.trim().length > 0) {
     inputEl.classList.remove("input-missing");
@@ -1883,22 +2429,19 @@ function onPersonalDetailsInputChange(docId, field, inputEl) {
 }
 
 async function runResumeImprovementAnalysis() {
-  const selectedDocIds = new Set();
-  AppState.selectedExistingImproveDocIds.forEach(id => selectedDocIds.add(id));
-  (AppState.improveUploadedResumes || []).forEach(r => {
-    if (r.doc_id) selectedDocIds.add(r.doc_id);
-  });
-  if (AppState.selectedResumeDocId) {
-    selectedDocIds.add(AppState.selectedResumeDocId);
+  if (window._isImprovementWorkflowRunning) {
+    showToast("Resume improvement workflow is already in progress, please wait...", "info");
+    return;
   }
 
-  const docIdArray = Array.from(selectedDocIds);
+  const docIdArray = getSelectedImprovementDocIds();
   if (!docIdArray.length) {
     showToast("Please select at least one candidate resume to improve", "warning");
     return;
   }
 
-  const jobId = document.getElementById("improve-job-select")?.value || null;
+  const jobSelect = document.getElementById("improve-job-select");
+  const jobId = jobSelect?.value || null;
   const customJd = document.getElementById("improve-custom-jd")?.value.trim() || null;
   const btnStart = document.getElementById("btn-start-improvement");
   const btnContinue = document.getElementById("btn-continue-improvement");
@@ -1910,43 +2453,136 @@ async function runResumeImprovementAnalysis() {
     return;
   }
 
-  // Prevent duplicate submissions and show loading indicator
+  const targetRole = (jobId && jobSelect && jobSelect.options[jobSelect.selectedIndex]?.text) || "Senior Technical Professional";
+
+  window._isImprovementWorkflowRunning = true;
   if (btnStart) btnStart.disabled = true;
   if (btnContinue) btnContinue.disabled = true;
   if (loadingIndicator) loadingIndicator.style.display = "flex";
   if (container) container.innerHTML = "";
 
-  AppState.improvementAnalysesByDocId = AppState.improvementAnalysesByDocId || {};
+  AppState.improvementAnalysesByDocId = {};
+  AppState.currentImprovementBatchDocIds = [...docIdArray];
+  AppState.appliedImprovements = {};
+
+  const successfulResults = [];
+  const failedResults = [];
 
   try {
     const total = docIdArray.length;
     for (let i = 0; i < total; i++) {
       const docId = docIdArray[i];
-      const personalDetails = AppState.candidatePersonalDetails[docId] || null;
+      let personalDetails = AppState.candidatePersonalDetails[docId] || null;
+      if (!personalDetails) {
+        await fetchAndPopulateCandidatePII(docId);
+        personalDetails = AppState.candidatePersonalDetails[docId] || null;
+      }
+      const candidateInfo = (AppState.resumes || []).find(r => r.doc_id === docId);
+      const candDisplayName = personalDetails?.name || candidateInfo?.full_name || candidateInfo?.candidate_name || docId;
+
       if (loadingIndicator) {
         const titleEl = loadingIndicator.querySelector("div:nth-child(2)");
+        const descEl = loadingIndicator.querySelector("div:nth-child(3)");
         if (titleEl) {
           titleEl.textContent = total > 1
-            ? `Analyzing Candidate ${i + 1} of ${total}: ${personalDetails?.name || docId}...`
-            : "Analyzing Resume Gaps & Aligning Requirements...";
+            ? `Processing Candidate ${i + 1} of ${total}: ${candDisplayName}...`
+            : `Improving Resume for ${candDisplayName}...`;
+        }
+        if (descEl) {
+          descEl.textContent = "AI analysis, targeted edits, Word DOCX generation, and IKM persistence";
         }
       }
-      const analysis = await API.analyzeImprovement(docId, jobId, jobId ? null : customJd, personalDetails);
-      AppState.improvementAnalysesByDocId[docId] = analysis;
+
+      try {
+        // Step 1: AI Improvement Analysis
+        const analysis = await API.analyzeImprovement(docId, jobId, jobId ? null : customJd, personalDetails);
+        AppState.improvementAnalysesByDocId[docId] = analysis;
+        window._currentImprovementData = analysis;
+
+        // Step 2: Auto-approve changes and build payload for Word generation
+        const approvedChanges = [];
+        (analysis.changes || []).forEach(c => {
+          approvedChanges.push({
+            ...c,
+            status: "accepted"
+          });
+        });
+
+        const summary = analysis.change_summary || `Target-aligned optimization for ${targetRole}`;
+        const content = analysis.improved_resume_text || analysis.original_text_preview || "";
+
+        // Step 3: Automatically apply changes and generate improved Word DOCX
+        const genRes = await API.generateWordResume(docId, content, summary, targetRole, personalDetails, approvedChanges);
+        if (genRes && genRes.version_id) {
+          if (!window._lastSavedVersionIdByDoc) window._lastSavedVersionIdByDoc = {};
+          window._lastSavedVersionIdByDoc[docId] = genRes.version_id;
+          if (genRes.library_doc_id) {
+            if (!window._lastSavedLibraryDocIdByDoc) window._lastSavedLibraryDocIdByDoc = {};
+            window._lastSavedLibraryDocIdByDoc[docId] = genRes.library_doc_id;
+          }
+
+          const appliedEntry = {
+            doc_id: docId,
+            library_doc_id: genRes.library_doc_id || null,
+            version_id: genRes.version_id,
+            filename: genRes.filename || `${docId}_Improved.docx`,
+            full_name: candDisplayName,
+            download_url: genRes.download_url,
+            timestamp: Date.now()
+          };
+          AppState.appliedImprovements[docId] = appliedEntry;
+          successfulResults.push(appliedEntry);
+        } else {
+          throw new Error("Failed to generate or persist improved DOCX.");
+        }
+      } catch (candErr) {
+        console.error(`Improvement error for candidate ${docId}:`, candErr);
+        failedResults.push({ docId, name: candDisplayName, error: candErr.message });
+        showToast(`Failed for ${candDisplayName}: ${candErr.message}`, "error");
+      }
     }
 
-    AppState.activeImprovementDocId = docIdArray[0];
+    AppState.activeImprovementDocId = successfulResults[0]?.doc_id || docIdArray[0];
     renderImprovementWorkspace(docIdArray);
-    showToast(
-      total > 1
-        ? `Improvement recommendations generated for ${total} candidates!`
-        : "Resume improvement recommendations generated!",
-      "success"
-    );
 
-    // Automatic scroll down smoothly to results section
-    if (container) {
-      container.scrollIntoView({ behavior: "smooth", block: "start" });
+    // Refresh library and data caches
+    await refreshDataCaches();
+    if (typeof loadLibrary === "function") {
+      loadLibrary().catch(() => {});
+    }
+
+    if (successfulResults.length > 0) {
+      showToast(
+        successfulResults.length > 1
+          ? `Successfully improved and applied ${successfulResults.length} resumes! Initiating downloads...`
+          : `Resume improved and applied successfully! Downloading...`,
+        "success"
+      );
+
+      // Step 4: Automatically initiate download for every successfully applied resume
+      for (let idx = 0; idx < successfulResults.length; idx++) {
+        const item = successfulResults[idx];
+        if (item.download_url) {
+          if (idx > 0) {
+            await new Promise(r => setTimeout(r, 350));
+          }
+          const a = document.createElement("a");
+          a.href = item.download_url;
+          a.download = item.filename || `${item.doc_id}_Improved_Resume.docx`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        }
+      }
+
+      // Step 5: Automatically open the existing preview interface for the improved resume(s)
+      setTimeout(() => {
+        openImprovedResumePreview(successfulResults[0].doc_id);
+      }, 500);
+    }
+
+    if (failedResults.length > 0) {
+      showToast(`${failedResults.length} candidate file(s) failed during improvement run.`, "warning");
     }
   } catch (err) {
     if (container) {
@@ -1954,6 +2590,7 @@ async function runResumeImprovementAnalysis() {
     }
     showToast(err.message, "error");
   } finally {
+    window._isImprovementWorkflowRunning = false;
     if (btnStart) btnStart.disabled = false;
     if (btnContinue) btnContinue.disabled = false;
     if (loadingIndicator) loadingIndicator.style.display = "none";
@@ -1964,44 +2601,93 @@ function renderImprovementWorkspace(docIdArray = null) {
   const container = document.getElementById("improvement-results-area");
   if (!container) return;
 
-  const docIds = docIdArray || Object.keys(AppState.improvementAnalysesByDocId || {});
+  if (docIdArray && Array.isArray(docIdArray) && docIdArray.length > 0) {
+    AppState.currentImprovementBatchDocIds = [...docIdArray];
+  }
+  const docIds = (AppState.currentImprovementBatchDocIds && AppState.currentImprovementBatchDocIds.length > 0)
+    ? AppState.currentImprovementBatchDocIds
+    : (docIdArray || Object.keys(AppState.improvementAnalysesByDocId || {}));
   if (!docIds.length) return;
 
   if (!AppState.activeImprovementDocId || !docIds.includes(AppState.activeImprovementDocId)) {
     AppState.activeImprovementDocId = docIds[0];
   }
 
-  let tabsHtml = "";
-  if (docIds.length > 1) {
-    tabsHtml = `
-      <div class="card" style="margin-bottom: 1rem; padding: 0.75rem 1rem;">
-        <div style="font-size:0.75rem; text-transform:uppercase; font-weight:700; color:var(--text-dim); margin-bottom:0.5rem;">
-          Selected Candidates (${docIds.length}) &bull; Review &amp; Edit Each Candidate Independently
+  const candidateCardsHtml = docIds.map((id, idx) => {
+    const analysis = AppState.improvementAnalysesByDocId[id];
+    const pii = AppState.candidatePersonalDetails[id];
+    const resumeObj = (AppState.resumes || []).find(r => r.doc_id === id);
+    const name = pii?.name || resumeObj?.full_name || resumeObj?.candidate_name || `Candidate ${id}`;
+    const score = analysis?.internal_match_score ?? "-";
+    const isActive = id === AppState.activeImprovementDocId;
+    const filename = resumeObj?.filename || `${id}.docx`;
+
+    return `
+      <div class="card" style="margin-bottom:0; padding:0.9rem; border:1.5px solid ${isActive ? 'var(--primary)' : 'var(--border-subtle)'}; background:${isActive ? 'rgba(37, 99, 235, 0.08)' : 'var(--bg-surface)'}; display:flex; flex-direction:column; justify-content:space-between; gap:0.6rem; border-radius:var(--radius-md);">
+        <div>
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.4rem; margin-bottom:0.3rem;">
+            <div style="font-weight:700; font-size:0.95rem; color:var(--text-main); display:flex; align-items:center; gap:0.4rem;">
+              <span>${escapeHtml(name)}</span>
+              ${isActive ? '<span class="file-status-badge badge-ready" style="font-size:0.68rem; background:var(--primary); color:#fff;">Active</span>' : ''}
+            </div>
+            <span class="file-status-badge badge-ready" style="font-size:0.75rem; font-weight:700;">${score} pts</span>
+          </div>
+          <div style="font-size:0.75rem; color:var(--text-muted); display:flex; gap:0.4rem; flex-wrap:wrap;">
+            <span>ID: <strong>${escapeHtml(id)}</strong></span> &bull;
+            <span>File: ${escapeHtml(filename)}</span>
+          </div>
         </div>
-        <div class="improve-cand-tabs" style="display:flex; gap:0.5rem; overflow-x:auto; padding-bottom:4px;">
-          ${docIds.map(id => {
-            const analysis = AppState.improvementAnalysesByDocId[id];
-            const pii = AppState.candidatePersonalDetails[id];
-            const resumeObj = (AppState.resumes || []).find(r => r.doc_id === id);
-            const name = pii?.name || resumeObj?.full_name || resumeObj?.candidate_name || id;
-            const score = analysis?.internal_match_score ?? "-";
-            const isActive = id === AppState.activeImprovementDocId;
-            return `
-              <button type="button" class="btn ${isActive ? 'btn-primary' : 'btn-secondary'} btn-sm" onclick="switchImprovementCandidate('${id}')" style="white-space:nowrap; display:flex; align-items:center; gap:0.4rem;">
-                <span>${escapeHtml(name)}</span>
-                <span class="file-status-badge badge-ready" style="font-size:0.68rem; padding:1px 5px;">${score} pts</span>
-              </button>
-            `;
-          }).join("")}
+
+        <div style="display:flex; gap:0.45rem; flex-wrap:wrap; margin-top:0.3rem; border-top:1px solid var(--border-subtle); padding-top:0.6rem;">
+          <button type="button" class="btn ${isActive ? 'btn-primary' : 'btn-secondary'} btn-sm" onclick="switchImprovementCandidate('${id}')" style="flex:1; min-width:110px; font-weight:600; font-size:0.75rem;">
+            ${isActive ? 'Editing Now' : 'Edit Resume'}
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="openResumePreview('${id}')" title="Preview Original" style="padding:0.25rem 0.55rem; display:inline-flex; align-items:center; justify-content:center;">
+            ${SVG_EYE_ICON}
+          </button>
+          <button type="button" class="btn btn-primary btn-sm btn-cand-download" onclick="downloadImprovedWordResume('${id}')" title="Download ${escapeHtml(name)}'s Word Resume" style="font-size:0.75rem; font-weight:700; display:inline-flex; align-items:center; gap:0.3rem;">
+            Download Word
+          </button>
         </div>
       </div>
     `;
-  }
+  }).join("");
+
+  // Only show queue banner when MULTIPLE resumes (more than 1) are present
+  const queueBannerHtml = docIds.length > 1 ? `
+    <div class="card" id="improvement-queue-banner" style="margin-bottom:1.25rem; padding:1.1rem; border:1px solid var(--border-subtle); background:var(--bg-surface-subtle);">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem; margin-bottom:0.85rem;">
+        <div>
+          <div style="display:flex; align-items:center; gap:0.5rem;">
+            <h3 style="font-family:var(--font-heading); font-size:1.15rem; font-weight:800; margin:0; color:var(--text-main);">
+              Improvement Queue: ${docIds.length} Candidate Resumes Ready
+            </h3>
+            <span class="file-status-badge badge-ready" style="font-size:0.72rem;">Multi-Resume Mode</span>
+          </div>
+          <p style="font-size:0.8rem; color:var(--text-muted); margin:0.2rem 0 0 0;">
+            Review each candidate's tailored optimizations, edit content, and download individual or batch Word resumes.
+          </p>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="downloadAllImprovedResumes()" style="font-weight:700; display:inline-flex; align-items:center; gap:0.4rem;">
+          Download All ${docIds.length} Resumes (.docx)
+        </button>
+      </div>
+
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:0.75rem;">
+        ${candidateCardsHtml}
+      </div>
+    </div>
+  ` : '';
 
   container.innerHTML = `
-    ${tabsHtml}
+    ${queueBannerHtml}
+    <!-- Candidate Personal & Contact Information strictly below the Improvement Queue and only for active resume -->
+    <div id="active-candidate-personal-details-area"></div>
     <div id="active-candidate-analysis-area"></div>
   `;
+
+  // Render personal details for the single active resume being worked on
+  renderImproveCandidatePersonalDetails(AppState.activeImprovementDocId);
 
   const activeAnalysis = AppState.improvementAnalysesByDocId[AppState.activeImprovementDocId];
   if (activeAnalysis) {
@@ -2014,12 +2700,8 @@ function renderImprovementWorkspace(docIdArray = null) {
 function switchImprovementCandidate(newDocId) {
   if (!newDocId || newDocId === AppState.activeImprovementDocId) return;
 
-  // Persist current editor modifications into memory
+  // Persist current change summary into memory
   if (AppState.activeImprovementDocId && AppState.improvementAnalysesByDocId[AppState.activeImprovementDocId]) {
-    const canvas = document.getElementById("word-editor-canvas");
-    if (canvas && canvas.dataset.userEdited === "true") {
-      AppState.improvementAnalysesByDocId[AppState.activeImprovementDocId].improved_resume_text = canvas.innerHTML;
-    }
     const summaryInput = document.getElementById("version-change-summary");
     if (summaryInput) {
       AppState.improvementAnalysesByDocId[AppState.activeImprovementDocId].change_summary = summaryInput.value;
@@ -2027,13 +2709,51 @@ function switchImprovementCandidate(newDocId) {
   }
 
   AppState.activeImprovementDocId = newDocId;
-  const docIds = Object.keys(AppState.improvementAnalysesByDocId || {});
+  const docIds = (AppState.currentImprovementBatchDocIds && AppState.currentImprovementBatchDocIds.length > 0)
+    ? AppState.currentImprovementBatchDocIds
+    : Object.keys(AppState.improvementAnalysesByDocId || {});
   renderImprovementWorkspace(docIds);
+
+  if (docIds.length > 1) {
+    // When multiple files are selected, jump back down to Accept All Changes and Proceed to Download
+    setTimeout(() => {
+      const acceptBtn = document.getElementById("btn-accept-all-bottom");
+      if (acceptBtn) {
+        acceptBtn.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 100);
+  } else {
+    // Automatically scroll up smoothly to the active candidate section when single resume
+    const scrollTarget = document.getElementById("active-candidate-personal-details-area") ||
+                         document.getElementById("active-candidate-analysis-area") ||
+                         document.getElementById("improvement-results-area");
+    if (scrollTarget) {
+      scrollTarget.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+}
+
+async function downloadAllImprovedResumes() {
+  const docIds = (AppState.currentImprovementBatchDocIds && AppState.currentImprovementBatchDocIds.length > 0)
+    ? AppState.currentImprovementBatchDocIds
+    : Object.keys(AppState.improvementAnalysesByDocId || {});
+  if (!docIds.length) return;
+  showToast(`Preparing downloads for ${docIds.length} candidate resumes...`, "info");
+  for (let i = 0; i < docIds.length; i++) {
+    const id = docIds[i];
+    await downloadImprovedWordResume(id, false);
+    await new Promise(r => setTimeout(r, 600));
+  }
+  showToast(`✓ All ${docIds.length} candidate Word resumes downloaded!`, "success");
 }
 
 function renderImprovementAnalysis(data, containerEl = null) {
   window._currentImprovementData = data;
   window._candidateDecisions = {};
+
+  const pii = AppState.candidatePersonalDetails[data.doc_id];
+  const resumeObj = (AppState.resumes || []).find(r => r.doc_id === data.doc_id);
+  const candName = pii?.name || data.candidate_personal_details?.name || resumeObj?.full_name || resumeObj?.candidate_name || data.doc_id;
 
   // Normalize changes list from structured response or suggested rewrites fallback
   const changes = data.changes && data.changes.length ? data.changes : (data.suggested_rewrites || []).map((s, idx) => ({
@@ -2095,11 +2815,8 @@ function renderImprovementAnalysis(data, containerEl = null) {
           <span class="file-status-badge badge-ready" style="font-size:0.7rem;">${data.document_type === 'docx' ? 'DOCX (In-place layout preserved)' : 'PDF / Text Format'}</span>
         </div>
         <h2 style="font-family:var(--font-heading); font-size:1.5rem; font-weight:700; margin-bottom:0.25rem;">${escapeHtml(data.job_title)}</h2>
-        <div style="font-size:0.8rem; color:var(--text-muted);">
-          Candidate: <strong>${escapeHtml(data.doc_id)}</strong> | Model: <strong>${escapeHtml(data.llm_model || 'Groq Cloud LPU')}</strong>
-        </div>
-        <div style="font-size:0.78rem; color:var(--accent-blue); margin-top:0.35rem;">
-          ℹ️ ${escapeHtml(data.ikm_evidence_status || 'Verified candidate evidence from repository')}
+        <div style="font-size:0.85rem; color:var(--text-muted);">
+          Active Candidate: <strong style="color:var(--primary); font-size:1.02rem;">${escapeHtml(candName)}</strong> (${escapeHtml(data.doc_id)})
         </div>
       </div>
 
@@ -2126,7 +2843,7 @@ function renderImprovementAnalysis(data, containerEl = null) {
     <div class="card" style="margin-bottom:1.25rem; border:1px solid var(--border-subtle); background:var(--bg-surface-subtle); padding:1rem;">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.6rem;">
         <h4 style="font-family:var(--font-heading); font-size:0.95rem; font-weight:700; margin:0; color:var(--text-main);">
-          📋 Resume Changes Summary (${changes.length} Modifications Grounded in Evidence)
+          Resume Changes Summary (${changes.length} Modifications Grounded in Evidence)
         </h4>
         <span class="file-status-badge badge-ready" style="font-size:0.72rem;">✓ Fact-Grounded / No Fabrication</span>
       </div>
@@ -2177,7 +2894,7 @@ function renderImprovementAnalysis(data, containerEl = null) {
             </div>
             <div>
               ${c.requires_user_confirmation
-                ? '<span class="confirmation-badge" style="font-size:0.72rem;">⚠️ Candidate Confirmation Required</span>'
+                ? '<span class="confirmation-badge" style="font-size:0.72rem;">Candidate Confirmation Required</span>'
                 : '<span class="file-status-badge badge-ready" style="font-size:0.72rem;">✓ Verified Candidate Evidence</span>'}
             </div>
           </div>
@@ -2202,14 +2919,6 @@ function renderImprovementAnalysis(data, containerEl = null) {
             </div>
           </div>
 
-          <!-- Rationale & Evidence -->
-          <div style="background:var(--bg-surface-subtle); border-radius:var(--radius-sm); padding:0.6rem 0.75rem; font-size:0.78rem; margin-bottom:0.75rem; color:var(--text-muted);">
-            <div><strong>Rationale:</strong> ${escapeHtml(c.reason || 'Aligns candidate experience with target job profile')}</div>
-            ${c.supporting_evidence && c.supporting_evidence.length ? `
-              <div style="margin-top:0.25rem;"><strong>Supporting Evidence:</strong> ${c.supporting_evidence.map(e => escapeHtml(e.text)).join(" | ")}</div>
-            ` : ''}
-          </div>
-
           <!-- Decision Action Buttons -->
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
             <div id="decision-status-label-${c.id}" style="font-size:0.78rem; font-weight:600; color:var(--text-dim);">Decision: Pending Review</div>
@@ -2222,104 +2931,63 @@ function renderImprovementAnalysis(data, containerEl = null) {
       `).join("")}
     </div>
 
-    <!-- Requirements Gaps & Unmet Criteria -->
-    <div class="card" style="margin-bottom:1.5rem; border:1px solid var(--border-subtle);">
-      <h4 style="font-family:var(--font-heading); font-size:0.95rem; margin-bottom:0.6rem; color:var(--danger);">
-        ⚠️ Requirements Gaps & Missing Evidence (${(data.gaps || []).length + (data.not_demonstrated || []).length})
-      </h4>
-      <p style="font-size:0.78rem; color:var(--text-muted); margin-bottom:0.75rem;">
-        These criteria from the target job description are not currently evidenced by the candidate's verified record. Honest screening preserves integrity by not hallucinating fake qualifications.
-      </p>
-      <div style="display:flex; flex-direction:column; gap:0.45rem;">
-        ${(data.gaps && data.gaps.length ? data.gaps : (data.not_demonstrated || [])).map(g => `
-          <div style="background:var(--bg-surface-subtle); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:0.6rem 0.75rem; font-size:0.82rem;">
-            <strong style="color:var(--text-main);">${escapeHtml(g.requirement)}</strong>
-            <div style="color:#fca5a5; font-size:0.76rem; margin-top:2px;">${escapeHtml(g.status === 'not_demonstrated' ? 'No supporting evidence found in candidate record.' : (g.recommendation || 'Gaps noted for recruiter review'))}</div>
-          </div>
-        `).join("")}
+    <!-- Big Prominent Accept All Changes Action at Bottom of Changes List -->
+    <div style="margin: 1.5rem 0 2rem 0; padding: 1.25rem 1.5rem; background: var(--bg-surface-subtle); border: 2px dashed var(--primary-border); border-radius: var(--radius-md); text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.04);">
+      <div style="font-size:0.88rem; color:var(--text-muted); margin-bottom:0.75rem;">
+        Approve all proposed enhancements across skills, experience, and formatting to reach the target <strong>90-95 alignment score</strong>.
+      </div>
+      <div style="display:inline-flex; align-items:center; justify-content:center; gap:0.75rem; flex-wrap:wrap;">
+        <button type="button" class="btn btn-primary" id="btn-accept-all-bottom" onclick="bulkAcceptAllAndProceed()" style="padding: 0.95rem 2.8rem; font-size: 1.15rem; font-weight: 800; border-radius: var(--radius-md); box-shadow: 0 4px 20px rgba(79, 70, 229, 0.4); display: inline-flex; align-items: center; gap: 0.65rem; cursor: pointer; transition: all 0.2s ease;">
+          <span style="font-size:1.35rem;">✓</span> Accept All Changes and Proceed
+        </button>
+        <button
+          type="button"
+          class="btn btn-secondary btn-sm"
+          id="btn-preview-improved-resume"
+          onclick="previewCurrentImprovedResume('${data.doc_id}')"
+          ${Boolean(AppState.appliedImprovements && AppState.appliedImprovements[data.doc_id]) ? '' : 'disabled'}
+          style="padding:0.6rem 1.15rem; font-size:0.85rem; font-weight:700; border-radius:var(--radius-md); display:inline-flex; align-items:center; gap:0.35rem; cursor:${Boolean(AppState.appliedImprovements && AppState.appliedImprovements[data.doc_id]) ? 'pointer' : 'not-allowed'}; opacity:${Boolean(AppState.appliedImprovements && AppState.appliedImprovements[data.doc_id]) ? '1' : '0.5'};"
+          title="${Boolean(AppState.appliedImprovements && AppState.appliedImprovements[data.doc_id]) ? 'Preview Improved Resume' : 'Preview available after clicking Accept All Changes and Proceed'}"
+        >
+          Preview
+        </button>
       </div>
     </div>
 
-    <!-- 2.2 Word-Compatible Document Editor & Export Section -->
-    <div class="card" style="margin-top:1.5rem;">
-      <h3 style="font-family:var(--font-heading); font-size:1.05rem; margin-bottom:0.4rem;">Approved Resume Revision & Export</h3>
-      <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.85rem;">
-        Edit paragraphs, apply formatting, change font sizes, and insert tables/images before exporting to Microsoft Word (.docx).
-      </p>
-      <div class="form-group">
-        <label class="form-label" style="font-size:0.78rem;">Version Change Summary</label>
-        <input type="text" id="version-change-summary" class="form-control" value="${data.change_summary ? data.change_summary.replace(/"/g, '&quot;') : 'Target-aligned resume optimization with verified STAR metrics.'}">
-      </div>
-
-      <!-- Word Editor Ribbon Toolbar -->
-      <div class="word-editor-toolbar">
-        <button type="button" class="word-toolbar-btn" onclick="formatEditorDoc('bold')" title="Bold (Ctrl+B)"><b>B</b></button>
-        <button type="button" class="word-toolbar-btn" onclick="formatEditorDoc('italic')" title="Italic (Ctrl+I)"><i>I</i></button>
-        <button type="button" class="word-toolbar-btn" onclick="formatEditorDoc('underline')" title="Underline (Ctrl+U)"><u>U</u></button>
-        <div class="word-toolbar-divider"></div>
-        <select class="word-toolbar-select" onchange="formatEditorHeading(this.value)" title="Paragraph Style">
-          <option value="p">Paragraph</option>
-          <option value="h1">Heading 1</option>
-          <option value="h2">Heading 2</option>
-          <option value="h3">Heading 3</option>
-        </select>
-        <select class="word-toolbar-select" onchange="formatEditorFontSize(this.value)" title="Font Size">
-          <option value="">Font Size</option>
-          <option value="9pt">9 pt</option>
-          <option value="10pt">10 pt</option>
-          <option value="10.5pt">10.5 pt</option>
-          <option value="11pt" selected>11 pt</option>
-          <option value="12pt">12 pt</option>
-          <option value="14pt">14 pt</option>
-          <option value="16pt">16 pt</option>
-          <option value="18pt">18 pt</option>
-          <option value="24pt">24 pt</option>
-        </select>
-        <div class="word-toolbar-divider"></div>
-        <button type="button" class="word-toolbar-btn" onclick="formatEditorDoc('justifyLeft')" title="Align Left">&#9664;</button>
-        <button type="button" class="word-toolbar-btn" onclick="formatEditorDoc('justifyCenter')" title="Center">&#9646;</button>
-        <button type="button" class="word-toolbar-btn" onclick="formatEditorDoc('justifyRight')" title="Align Right">&#9654;</button>
-        <div class="word-toolbar-divider"></div>
-        <button type="button" class="word-toolbar-btn" onclick="formatEditorDoc('insertUnorderedList')" title="Bullet List">&bull; List</button>
-        <button type="button" class="word-toolbar-btn" onclick="formatEditorDoc('insertOrderedList')" title="Numbered List">1. List</button>
-        <div class="word-toolbar-divider"></div>
-        <button type="button" class="word-toolbar-btn" onclick="insertTableIntoWordEditor()" title="Insert Table">⊞ Table</button>
-        <button type="button" class="word-toolbar-btn" onclick="addTableRowToWordEditor()" title="Add Row to Table">+ Row</button>
-        <button type="button" class="word-toolbar-btn" onclick="deleteTableRowFromWordEditor()" title="Delete Row from Table">- Row</button>
-        <div class="word-toolbar-divider"></div>
-        <button type="button" class="word-toolbar-btn" onclick="document.getElementById('word-image-upload-input').click()" title="Insert Image into Document">
-          📷 Image
+    <!-- 2.2 Recruiter Action Controls Bar (Centered: Compare Versions, Word Editor, Download) -->
+    <div class="card" style="margin-top:1.5rem; margin-bottom:1rem; border:1px solid var(--border-subtle); padding:1.25rem; display:flex; justify-content:center; align-items:center;">
+      <div style="display:flex; align-items:center; justify-content:center; gap:1rem; flex-wrap:wrap;">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          id="btn-compare-versions"
+          onclick="openVersionComparisonModal('${data.doc_id}')"
+          ${Boolean(AppState.appliedImprovements && AppState.appliedImprovements[data.doc_id]) ? '' : 'disabled'}
+          style="font-weight:600; font-size:1rem; padding:0.75rem 1.6rem; border-radius:var(--radius-md); cursor:${Boolean(AppState.appliedImprovements && AppState.appliedImprovements[data.doc_id]) ? 'pointer' : 'not-allowed'}; opacity:${Boolean(AppState.appliedImprovements && AppState.appliedImprovements[data.doc_id]) ? '1' : '0.5'};"
+          title="${Boolean(AppState.appliedImprovements && AppState.appliedImprovements[data.doc_id]) ? 'Compare Original vs Improved' : 'Compare available after clicking Accept All Changes and Proceed'}"
+        >
+          Compare Versions
         </button>
-        <input type="file" id="word-image-upload-input" accept="image/*" style="display:none;" onchange="insertImageIntoWordEditor(this)">
-        <button type="button" class="word-toolbar-btn" onclick="formatEditorDoc('removeFormat')" title="Clear Formatting">✕ Clear</button>
-      </div>
-
-      <!-- Word Editor Paper Canvas -->
-      <div class="word-editor-paper-container">
-        <div id="word-editor-canvas" class="word-editor-canvas" contenteditable="true" oninput="syncEditorToTextarea()">
-          ${formatInitialCanvasContent(data.improved_resume_text || data.original_text_preview || '')}
-        </div>
-      </div>
-      <textarea id="version-revised-content" style="display:none;">${escapeHtml(data.improved_resume_text || data.original_text_preview || '')}</textarea>
-
-      <!-- Action Buttons -->
-      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.6rem; margin-top:1.1rem;">
-        <button type="button" class="btn btn-secondary" id="btn-compare-versions" onclick="openVersionComparisonModal()">
-          🔄 Compare Versions
+        <button type="button" class="btn btn-primary" id="btn-open-wordcraft-editor" onclick="openWordCraftEditorModal('${data.doc_id}')" style="font-weight:600; font-size:1rem; padding:0.75rem 1.6rem; border-radius:var(--radius-md); background:linear-gradient(135deg, #2563eb, #1d4ed8); border:1px solid #3b82f6; color:#fff; box-shadow:0 2px 6px rgba(37,99,235,0.35);" title="Open full MS Word-compatible WordCraft editor">
+          Word Editor
         </button>
-        <div style="display:flex; gap:0.6rem; flex-wrap:wrap;">
-          <button type="button" class="btn btn-secondary" id="btn-save-draft" onclick="saveRevisedVersionDraft('${data.doc_id}')">
-            💾 Save Draft
-          </button>
-          <button type="button" class="btn btn-secondary" id="btn-open-local-word" onclick="openResumeInLocalWord('${data.doc_id}')">
-            🖥️ Open in Local Word
-          </button>
-          <button type="button" class="btn btn-primary" id="btn-agent-download-word" onclick="downloadImprovedWordResume('${data.doc_id}')">
-            📥 Download Approved Word (.docx)
-          </button>
-        </div>
+        <button
+          type="button"
+          class="btn btn-secondary"
+          id="btn-download-improved"
+          onclick="handleImprovementDownloadClick('${data.doc_id}')"
+          ${Boolean(AppState.appliedImprovements && AppState.appliedImprovements[data.doc_id]) ? '' : 'disabled'}
+          style="font-weight:600; font-size:1rem; padding:0.75rem 1.6rem; border-radius:var(--radius-md); cursor:${Boolean(AppState.appliedImprovements && AppState.appliedImprovements[data.doc_id]) ? 'pointer' : 'not-allowed'}; opacity:${Boolean(AppState.appliedImprovements && AppState.appliedImprovements[data.doc_id]) ? '1' : '0.5'}; transition: all 0.25s ease;"
+          title="${Boolean(AppState.appliedImprovements && AppState.appliedImprovements[data.doc_id]) ? 'Download Improved Resume' : 'Download available after clicking Accept All Changes and Proceed'}"
+        >
+          Download
+        </button>
       </div>
     </div>
+
+    <!-- Hidden state inputs for revised document and summary -->
+    <input type="hidden" id="version-change-summary" value="${data.change_summary ? data.change_summary.replace(/"/g, '&quot;') : 'Target-aligned resume optimization with verified STAR metrics.'}">
+    <textarea id="version-revised-content" style="display:none;">${escapeHtml(data.improved_resume_text || data.original_text_preview || '')}</textarea>
   `;
 
   // Auto-apply personal details
@@ -2331,9 +2999,6 @@ function applyPersonalDetailsToDraft(showToastNotice = false) {
   if (!docId) return;
 
   const details = AppState.candidatePersonalDetails[docId] || window._currentImprovementData?.candidate_personal_details || {};
-  const canvas = document.getElementById("word-editor-canvas");
-  if (!canvas) return;
-
   const keys = ["name", "role", "phone", "email", "location", "links"];
   keys.forEach(k => {
     const inp = document.getElementById(`inp-${docId}-${k}`) || document.getElementById(`improve-cand-${k}`);
@@ -2342,301 +3007,531 @@ function applyPersonalDetailsToDraft(showToastNotice = false) {
     }
   });
 
-  const name = details.name || "";
-  const role = details.role || "";
-  const phone = details.phone || "";
-  const email = details.email || "";
-  const loc = details.location || "";
-  const links = details.links || "";
-
-  const contactParts = [phone, email, loc, links].filter(Boolean).join(" | ");
-
-  const currentText = canvas.innerText || "";
-  if (name && !currentText.includes(name) && !canvas.dataset.userEdited) {
-    let headerHtml = `<div class="resume-header-block" style="text-align:center; margin-bottom:1.2rem; border-bottom:1px solid #ccc; padding-bottom:0.75rem;">`;
-    headerHtml += `<h1 style="font-size:1.6rem; font-weight:700; margin:0 0 0.25rem 0;">${escapeHtml(name)}</h1>`;
-    if (role) headerHtml += `<div style="font-size:1.05rem; font-weight:600; color:#444; margin-bottom:0.25rem;">${escapeHtml(role)}</div>`;
-    if (contactParts) headerHtml += `<div style="font-size:0.85rem; color:#666;">${escapeHtml(contactParts)}</div>`;
-    headerHtml += `</div>`;
-
-    canvas.innerHTML = headerHtml + canvas.innerHTML;
-    syncEditorToTextarea();
-  }
-
   if (showToastNotice) {
-    showToast("Candidate contact details applied to draft.", "info");
+    showToast("Candidate contact details updated.", "info");
   }
-}
-
-function formatEditorDoc(command, value = null) {
-  document.execCommand(command, false, value);
-  syncEditorToTextarea();
-}
-
-function formatEditorHeading(tag) {
-  if (tag === 'p') {
-    document.execCommand('formatBlock', false, '<p>');
-  } else {
-    document.execCommand('formatBlock', false, `<${tag}>`);
-  }
-  syncEditorToTextarea();
-}
-
-function formatEditorFontSize(size) {
-  if (!size) return;
-  const sel = window.getSelection();
-  if (!sel || !sel.rangeCount) return;
-  const range = sel.getRangeAt(0);
-  const selectedText = range.toString();
-  if (!selectedText) {
-    document.execCommand("fontSize", false, size === "18pt" || size === "24pt" ? "5" : size === "14pt" || size === "16pt" ? "4" : "3");
-    syncEditorToTextarea();
-    return;
-  }
-  const span = document.createElement("span");
-  span.style.fontSize = size;
-  span.textContent = selectedText;
-  range.deleteContents();
-  range.insertNode(span);
-  syncEditorToTextarea();
-}
-
-function insertTableIntoWordEditor(rows = 3, cols = 3) {
-  const canvas = document.getElementById("word-editor-canvas");
-  if (!canvas) return;
-  canvas.focus();
-  let tableHtml = `<table style="width:100%; border-collapse:collapse; margin:0.75rem 0; border:1px solid var(--border-subtle);"><tbody>`;
-  for (let r = 0; r < rows; r++) {
-    tableHtml += `<tr>`;
-    for (let c = 0; c < cols; c++) {
-      if (r === 0) {
-        tableHtml += `<th style="border:1px solid var(--border-subtle); padding:6px 10px; background:var(--bg-surface-subtle); font-weight:600; text-align:left;">Header ${c + 1}</th>`;
-      } else {
-        tableHtml += `<td style="border:1px solid var(--border-subtle); padding:6px 10px;">Item ${r},${c + 1}</td>`;
-      }
-    }
-    tableHtml += `</tr>`;
-  }
-  tableHtml += `</tbody></table><p><br></p>`;
-  document.execCommand("insertHTML", false, tableHtml);
-  syncEditorToTextarea();
-  showToast("Table inserted into editor", "info");
-}
-
-function addTableRowToWordEditor() {
-  const canvas = document.getElementById("word-editor-canvas");
-  if (!canvas) return;
-  const tables = canvas.querySelectorAll("table");
-  if (!tables.length) {
-    insertTableIntoWordEditor(2, 2);
-    return;
-  }
-  const lastTable = tables[tables.length - 1];
-  const colCount = (lastTable.rows[0] && lastTable.rows[0].cells.length) || 2;
-  const newRow = lastTable.insertRow(-1);
-  for (let i = 0; i < colCount; i++) {
-    const newCell = newRow.insertCell(i);
-    newCell.style.border = "1px solid var(--border-subtle)";
-    newCell.style.padding = "6px 10px";
-    newCell.innerHTML = "New entry";
-  }
-  syncEditorToTextarea();
-  showToast("Row added to table", "info");
-}
-
-function deleteTableRowFromWordEditor() {
-  const canvas = document.getElementById("word-editor-canvas");
-  if (!canvas) return;
-  const tables = canvas.querySelectorAll("table");
-  if (!tables.length) return;
-  const lastTable = tables[tables.length - 1];
-  if (lastTable.rows.length > 1) {
-    lastTable.deleteRow(-1);
-    syncEditorToTextarea();
-    showToast("Row deleted from table", "info");
-  } else {
-    lastTable.remove();
-    syncEditorToTextarea();
-    showToast("Table removed", "info");
-  }
-}
-
-function insertImageIntoWordEditor(input) {
-  if (!input.files || !input.files[0]) return;
-  const file = input.files[0];
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    const dataUrl = e.target.result;
-    document.execCommand('insertImage', false, dataUrl);
-    syncEditorToTextarea();
-    showToast(`Inserted image "${file.name}" into document`, "success");
-  };
-  reader.readAsDataURL(file);
-  input.value = "";
-}
-
-function syncEditorToTextarea() {
-  const canvas = document.getElementById("word-editor-canvas");
-  const textarea = document.getElementById("version-revised-content");
-  if (canvas) {
-    canvas.dataset.userEdited = "true";
-  }
-  if (canvas && textarea) {
-    textarea.value = canvas.innerHTML;
-  }
-}
-
-function formatInitialCanvasContent(text) {
-  if (!text) return "<p>Enter candidate resume content...</p>";
-  if (text.includes("<p>") || text.includes("<div>")) {
-    return text;
-  }
-  const lines = text.split("\n");
-  let html = "";
-  lines.forEach(line => {
-    const l = line.trim();
-    if (!l) {
-      html += "<p><br></p>";
-    } else if (l.startsWith("### ")) {
-      html += `<h3>${escapeHtml(l.replace("### ", ""))}</h3>`;
-    } else if (l.startsWith("## ")) {
-      html += `<h2>${escapeHtml(l.replace("## ", ""))}</h2>`;
-    } else if (l.startsWith("# ")) {
-      html += `<h1>${escapeHtml(l.replace("# ", ""))}</h1>`;
-    } else if (l.startsWith("- ") || l.startsWith("* ")) {
-      html += `<ul><li>${escapeHtml(l.replace(/^[\-*]\s+/, ""))}</li></ul>`;
-    } else {
-      html += `<p>${escapeHtml(l)}</p>`;
-    }
-  });
-  return html;
 }
 
 async function openResumeInLocalWord(docId) {
-  if (!docId) return;
-  try {
-    showToast("Launching Microsoft Word locally...", "info");
-    const res = await API.openInWord(docId);
-    showToast(res.message || "Document opened in Microsoft Word!", "success");
-  } catch (err) {
-    showToast(`Could not open local Word: ${err.message}`, "error");
+  const targetDocId = docId ||
+    AppState.previewList?.[AppState.previewIndex]?.doc_id ||
+    AppState.selectedResumeDocId ||
+    window._currentImprovementData?.doc_id;
+  if (!targetDocId) {
+    showToast("Please select a candidate resume first", "warning");
+    return;
+  }
+  openWordCraftEditorModal(targetDocId);
+}
+
+let _currentCompareViewMode = "preview";
+let _currentComparePreviewDoc = "revised"; // "revised" or "original"
+
+function setCompareViewMode(mode) {
+  _currentCompareViewMode = (mode === "side-by-side" || mode === "split") ? "side-by-side" : "preview";
+  const grid = document.getElementById("compare-grid-container");
+  const origPanel = document.getElementById("compare-original-panel");
+  const revPanel = document.getElementById("compare-revised-panel");
+  const btnSide = document.getElementById("btn-compare-mode-side") || document.getElementById("btn-compare-view-split");
+  const btnPrev = document.getElementById("btn-compare-mode-preview") || document.getElementById("btn-compare-view-preview");
+  const docSelector = document.getElementById("compare-doc-selector");
+
+  if (!grid || !origPanel || !revPanel) return;
+
+  if (_currentCompareViewMode === "side-by-side") {
+    grid.classList.remove("mode-preview");
+    origPanel.style.display = "";
+    revPanel.style.display = "";
+    if (btnSide) {
+      btnSide.className = "btn btn-primary btn-sm";
+    }
+    if (btnPrev) {
+      btnPrev.className = "btn btn-secondary btn-sm";
+    }
+    if (docSelector) docSelector.style.display = "none";
+  } else {
+    grid.classList.add("mode-preview");
+    if (btnSide) {
+      btnSide.className = "btn btn-secondary btn-sm";
+    }
+    if (btnPrev) {
+      btnPrev.className = "btn btn-primary btn-sm";
+    }
+    if (docSelector) docSelector.style.display = "inline-flex";
+    setComparePreviewDoc(_currentComparePreviewDoc);
   }
 }
 
-AppState.compareBlocks = [];
-AppState.comparePageIndex = 0;
-AppState.comparePageSize = 25;
+function setComparePreviewDoc(docType) {
+  _currentComparePreviewDoc = docType;
+  const origPanel = document.getElementById("compare-original-panel");
+  const revPanel = document.getElementById("compare-revised-panel");
+  const btnRevised = document.getElementById("btn-compare-doc-revised");
+  const btnOrig = document.getElementById("btn-compare-doc-original");
 
-function isTextSimilar(s1, s2) {
-  if (!s1 || !s2) return false;
-  const words1 = new Set(s1.toLowerCase().split(/\s+/));
-  const words2 = new Set(s2.toLowerCase().split(/\s+/));
-  let common = 0;
-  words1.forEach(w => { if (words2.has(w)) common++; });
-  const total = Math.max(words1.size, words2.size);
-  return total > 0 && (common / total) >= 0.35;
+  if (!origPanel || !revPanel) return;
+
+  if (_currentCompareViewMode === "preview") {
+    if (docType === "revised") {
+      origPanel.style.display = "none";
+      revPanel.style.display = "";
+      if (btnRevised) btnRevised.className = "btn btn-primary btn-sm";
+      if (btnOrig) btnOrig.className = "btn btn-secondary btn-sm";
+    } else {
+      origPanel.style.display = "";
+      revPanel.style.display = "none";
+      if (btnRevised) btnRevised.className = "btn btn-secondary btn-sm";
+      if (btnOrig) btnOrig.className = "btn btn-primary btn-sm";
+    }
+  }
 }
 
-function openVersionComparisonModal() {
-  if (!window._currentImprovementData) {
-    showToast("No active resume revision to compare.", "warning");
+function toggleComparePreviewDoc() {
+  setComparePreviewDoc(_currentComparePreviewDoc === "revised" ? "original" : "revised");
+}
+
+function renderComparisonChangesBar(changes) {
+  const countEl = document.getElementById("compare-changes-count");
+  const pillsEl = document.getElementById("compare-changes-pills");
+  if (!pillsEl) return;
+
+  const validChanges = (changes || []).filter(c => c && (c.original_text || c.proposed_text));
+  if (countEl) {
+    countEl.textContent = `${validChanges.length} Changes Made`;
+  }
+
+  if (validChanges.length === 0) {
+    pillsEl.innerHTML = `<span style="font-size:0.78rem; color:var(--text-muted);">No specific text replacements detected.</span>`;
     return;
   }
 
-  const data = window._currentImprovementData;
-  const origBadge = document.getElementById("compare-original-badge");
-  const revBadge = document.getElementById("compare-revised-badge");
-
-  if (origBadge) origBadge.textContent = `${data.doc_id} (Original)`;
-  if (revBadge) revBadge.textContent = `Optimized Revision`;
-
-  // Get raw texts
-  const originalText = data.original_text_preview || "Original resume text.";
-  const canvas = document.getElementById("word-editor-canvas");
-  const revisedText = canvas ? canvas.innerText : (data.improved_resume_text || originalText);
-
-  const origLines = originalText.split("\n").map(l => l.trim()).filter(l => l.length > 0);
-  const revLines = revisedText.split("\n").map(l => l.trim()).filter(l => l.length > 0);
-
-  // Build mapping from changes for accurate modified pairing
-  const changePairs = new Map();
-  (data.changes || []).forEach(c => {
-    if (c.original_text && c.proposed_text) {
-      changePairs.set(c.original_text.trim(), c.proposed_text.trim());
-    }
-  });
-
-  const blocks = [];
-  let oIdx = 0;
-  let rIdx = 0;
-
-  while (oIdx < origLines.length || rIdx < revLines.length) {
-    const oLine = oIdx < origLines.length ? origLines[oIdx] : null;
-    const rLine = rIdx < revLines.length ? revLines[rIdx] : null;
-
-    if (oLine !== null && rLine !== null && oLine === rLine) {
-      blocks.push({ type: "unchanged", orig: oLine, rev: rLine });
-      oIdx++;
-      rIdx++;
-    } else if (oLine !== null && (changePairs.has(oLine) || (rLine !== null && isTextSimilar(oLine, rLine)))) {
-      blocks.push({
-        type: "modified",
-        orig: oLine,
-        rev: rLine || changePairs.get(oLine) || oLine
-      });
-      oIdx++;
-      rIdx++;
-    } else if (rLine !== null && !origLines.includes(rLine)) {
-      blocks.push({ type: "added", orig: null, rev: rLine });
-      rIdx++;
-    } else if (oLine !== null && !revLines.includes(oLine)) {
-      blocks.push({ type: "removed", orig: oLine, rev: null });
-      oIdx++;
-    } else {
-      blocks.push({ type: "modified", orig: oLine, rev: rLine });
-      if (oIdx < origLines.length) oIdx++;
-      if (rIdx < revLines.length) rIdx++;
-    }
-  }
-
-  AppState.compareBlocks = blocks;
-  AppState.comparePageIndex = 0;
-  renderComparePage(0);
-  openModal("version-compare-modal");
+  pillsEl.innerHTML = validChanges.map((c, idx) => {
+    const label = c.section || c.category || `Change #${idx + 1}`;
+    const cleanLabel = escapeHtml(label.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase()));
+    return `
+      <button type="button" class="compare-change-pill" data-change-id="${c.id}" onclick="jumpToCompareChange('${c.id}')" title="${escapeHtml(c.explanation || 'Click to locate change in documents')}">
+        <span style="font-weight:700;">#${idx + 1}</span> ${cleanLabel}
+      </button>
+    `;
+  }).join("");
 }
 
-function renderComparePage(pageIdx) {
-  const blocks = AppState.compareBlocks || [];
-  const pageSize = AppState.comparePageSize || 25;
-  const totalPages = Math.ceil(blocks.length / pageSize) || 1;
-  const start = pageIdx * pageSize;
-  const end = Math.min(start + pageSize, blocks.length);
-  const pageBlocks = blocks.slice(start, end);
-
+function jumpToCompareChange(changeId) {
+  const origMark = document.getElementById(`compare-orig-${changeId}`);
+  const revMark = document.getElementById(`compare-rev-${changeId}`);
   const origBody = document.getElementById("compare-original-body");
   const revBody = document.getElementById("compare-revised-body");
 
-  let origHtml = "";
-  let revHtml = "";
-
-  pageBlocks.forEach(b => {
-    if (b.type === "unchanged") {
-      origHtml += `<div style="margin-bottom:0.45rem; line-height:1.45;">${escapeHtml(b.orig)}</div>`;
-      revHtml += `<div style="margin-bottom:0.45rem; line-height:1.45;">${escapeHtml(b.rev)}</div>`;
-    } else if (b.type === "modified") {
-      origHtml += `<div style="margin-bottom:0.45rem; line-height:1.45;"><span class="diff-removed">${escapeHtml(b.orig || "")}</span></div>`;
-      revHtml += `<div style="margin-bottom:0.45rem; line-height:1.45;"><span class="diff-modified">~ ${escapeHtml(b.rev || "")}</span></div>`;
-    } else if (b.type === "added") {
-      origHtml += `<div style="margin-bottom:0.45rem; min-height:1.2rem; color:transparent;">&nbsp;</div>`;
-      revHtml += `<div style="margin-bottom:0.45rem; line-height:1.45;"><span class="diff-added">+ ${escapeHtml(b.rev)}</span></div>`;
-    } else if (b.type === "removed") {
-      origHtml += `<div style="margin-bottom:0.45rem; line-height:1.45;"><span class="diff-removed">- ${escapeHtml(b.orig)}</span></div>`;
-      revHtml += `<div style="margin-bottom:0.45rem; min-height:1.2rem; color:transparent;">&nbsp;</div>`;
-    }
+  // Activate pill
+  document.querySelectorAll(".compare-change-pill").forEach(p => {
+    p.classList.toggle("active", p.dataset.changeId === String(changeId));
   });
 
-  if (origBody) origBody.innerHTML = origHtml || "<p class='text-dim'>Original resume text</p>";
-  if (revBody) revBody.innerHTML = revHtml || "<p class='text-dim'>Revised resume text</p>";
+  if (origMark && origBody) {
+    origMark.scrollIntoView({ behavior: "smooth", block: "center" });
+    origMark.classList.add("compare-highlight-pulse");
+    setTimeout(() => origMark.classList.remove("compare-highlight-pulse"), 2500);
+  }
+  if (revMark && revBody) {
+    revMark.scrollIntoView({ behavior: "smooth", block: "center" });
+    revMark.classList.add("compare-highlight-pulse");
+    setTimeout(() => revMark.classList.remove("compare-highlight-pulse"), 2500);
+  }
+}
+
+function highlightTextInElement(container, rawText, markerClass, markId) {
+  if (!container || !rawText || typeof rawText !== "string") return false;
+  const targetText = rawText.trim();
+  if (!targetText || targetText.length < 3) return false;
+
+  // 1. Direct text node search
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
+  let node;
+  const nodesToProcess = [];
+  while ((node = walker.nextNode())) {
+    if (node.parentElement && (node.parentElement.tagName === "MARK" || node.parentElement.tagName === "SCRIPT" || node.parentElement.tagName === "STYLE")) {
+      continue;
+    }
+    nodesToProcess.push(node);
+  }
+
+  for (const textNode of nodesToProcess) {
+    const val = textNode.nodeValue;
+    const idx = val.indexOf(targetText);
+    if (idx !== -1) {
+      const parent = textNode.parentNode;
+      const before = val.substring(0, idx);
+      const matched = val.substring(idx, idx + targetText.length);
+      const after = val.substring(idx + targetText.length);
+
+      const mark = document.createElement("mark");
+      mark.className = markerClass;
+      if (markId) mark.id = markId;
+      mark.dataset.changeId = markId ? markId.replace(/compare-(orig|rev)-/, "") : "";
+      mark.textContent = matched;
+
+      const frag = document.createDocumentFragment();
+      if (before) frag.appendChild(document.createTextNode(before));
+      frag.appendChild(mark);
+      if (after) frag.appendChild(document.createTextNode(after));
+
+      parent.replaceChild(frag, textNode);
+      return true;
+    }
+  }
+
+  // 2. Normalized block search (in case of extra spaces, newlines, or multiple spans)
+  const blocks = container.querySelectorAll("p, div, li, tr, span");
+  const normalizedTarget = targetText.replace(/\s+/g, " ").trim();
+  for (const block of blocks) {
+    if (block.querySelector("mark")) continue;
+    const blockText = (block.textContent || "").replace(/\s+/g, " ");
+    if (blockText.includes(normalizedTarget) && normalizedTarget.length > 5) {
+      const prefix = targetText.slice(0, Math.min(35, targetText.length)).trim();
+      const walker2 = document.createTreeWalker(block, NodeFilter.SHOW_TEXT, null, false);
+      let tNode;
+      while ((tNode = walker2.nextNode())) {
+        const tVal = tNode.nodeValue;
+        const pIdx = tVal.indexOf(prefix);
+        if (pIdx !== -1) {
+          const parent = tNode.parentNode;
+          const mark = document.createElement("mark");
+          mark.className = markerClass;
+          if (markId) mark.id = markId;
+          mark.dataset.changeId = markId ? markId.replace(/compare-(orig|rev)-/, "") : "";
+          mark.textContent = tVal.substring(pIdx, Math.min(tVal.length, pIdx + targetText.length));
+
+          const before = tVal.substring(0, pIdx);
+          const after = tVal.substring(pIdx + mark.textContent.length);
+          const frag = document.createDocumentFragment();
+          if (before) frag.appendChild(document.createTextNode(before));
+          frag.appendChild(mark);
+          if (after) frag.appendChild(document.createTextNode(after));
+          parent.replaceChild(frag, tNode);
+          return true;
+        }
+      }
+    }
+  }
+
+  // 3. Fallback for distinct sentence segment
+  const firstSentence = targetText.split(/[.\n]/)[0]?.trim();
+  if (firstSentence && firstSentence.length >= 10 && firstSentence !== targetText) {
+    for (const textNode of nodesToProcess) {
+      if (!textNode.parentNode) continue;
+      const val = textNode.nodeValue;
+      const idx = val.indexOf(firstSentence);
+      if (idx !== -1) {
+        const parent = textNode.parentNode;
+        const before = val.substring(0, idx);
+        const matched = val.substring(idx, idx + firstSentence.length);
+        const after = val.substring(idx + firstSentence.length);
+
+        const mark = document.createElement("mark");
+        mark.className = markerClass;
+        if (markId) mark.id = markId;
+        mark.dataset.changeId = markId ? markId.replace(/compare-(orig|rev)-/, "") : "";
+        mark.textContent = matched;
+
+        const frag = document.createDocumentFragment();
+        if (before) frag.appendChild(document.createTextNode(before));
+        frag.appendChild(mark);
+        if (after) frag.appendChild(document.createTextNode(after));
+
+        parent.replaceChild(frag, textNode);
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+AppState.compareOriginalPages = [];
+AppState.compareRevisedPages = [];
+AppState.comparePageIndex = 0;
+AppState.compareTotalPages = 1;
+
+function downloadCurrentCompareDocument() {
+  let docId = null;
+  let filename = null;
+  let versionId = null;
+  if (AppState.compareList && AppState.compareList[AppState.compareIndex]) {
+    const item = AppState.compareList[AppState.compareIndex];
+    docId = item.doc_id;
+    filename = item.original_filename || `${docId}.docx`;
+    versionId = item.version_id || null;
+  } else if (window._currentImprovementData && window._currentImprovementData.doc_id) {
+    docId = window._currentImprovementData.doc_id;
+    filename = `${docId}.docx`;
+  }
+  if (!docId && !versionId) {
+    showToast("No active document to download.", "warning");
+    return;
+  }
+
+  const downloadUrl = versionId ? `/api/versions/${encodeURIComponent(versionId)}/file` : `/api/resumes/${encodeURIComponent(docId)}/file`;
+  const a = document.createElement("a");
+  a.href = downloadUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+function renderCompareTabsBar(activeIdx) {
+  const tabsBar = document.getElementById("compare-improved-tabs-bar");
+  if (!tabsBar) return;
+  if (!AppState.compareList || AppState.compareList.length === 0) {
+    tabsBar.style.display = "none";
+    tabsBar.innerHTML = "";
+    return;
+  }
+
+  tabsBar.style.display = "flex";
+  tabsBar.innerHTML = AppState.compareList.map((item, idx) => {
+    const isActive = idx === activeIdx;
+    const viewLabel = item.view_label || `View ${idx + 1}`;
+    const filename = item.filename || item.original_filename || `Resume_${idx + 1}.docx`;
+    return `
+      <button
+        type="button"
+        class="preview-improved-tab-btn ${isActive ? 'active' : ''}"
+        onclick="switchImprovedCompareIndex(${idx})"
+        title="Compare improved resume: ${escapeHtml(filename)}"
+      >
+        <span class="tab-view-num">${escapeHtml(viewLabel)} &mdash;</span>
+        <span class="tab-filename" style="max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(filename)}</span>
+      </button>
+    `;
+  }).join("");
+}
+
+async function switchImprovedCompareIndex(newIdx) {
+  if (!AppState.compareList || newIdx < 0 || newIdx >= AppState.compareList.length) return;
+  AppState.compareIndex = newIdx;
+  renderCompareTabsBar(newIdx);
+  await renderVersionComparisonAtIndex(newIdx);
+}
+
+async function openVersionComparisonModal(targetDocId = null) {
+  const currentDocId = targetDocId || AppState.activeImprovementDocId || window._currentImprovementData?.doc_id;
+  const appliedList = getAppliedImprovementsList();
+
+  if (!appliedList || appliedList.length === 0) {
+    showToast("Compare Versions is available only after changes are applied via 'Accept All Changes and Proceed'.", "warning");
+    return;
+  }
+
+  AppState.compareList = appliedList.map((entry, index) => {
+    const viewLabel = `View ${index + 1}`;
+    const displayFilename = entry.filename || `${entry.doc_id}_Improved.docx`;
+    return {
+      doc_id: entry.doc_id,
+      library_doc_id: entry.library_doc_id || null,
+      version_id: entry.version_id,
+      full_name: entry.full_name || displayFilename,
+      original_filename: displayFilename,
+      filename: displayFilename,
+      view_label: viewLabel
+    };
+  });
+
+  let initialIdx = 0;
+  if (currentDocId) {
+    const foundIdx = AppState.compareList.findIndex(item => item.doc_id === currentDocId);
+    if (foundIdx !== -1) initialIdx = foundIdx;
+  }
+
+  AppState.compareIndex = initialIdx;
+  renderCompareTabsBar(initialIdx);
+  openModal("version-compare-modal");
+  await renderVersionComparisonAtIndex(initialIdx);
+}
+
+async function renderVersionComparisonAtIndex(idx) {
+  if (!AppState.compareList || !AppState.compareList[idx]) return;
+  const item = AppState.compareList[idx];
+  const docId = item.doc_id;
+  const versionId = item.version_id || AppState.appliedImprovements?.[docId]?.version_id || window._lastSavedVersionIdByDoc?.[docId];
+  const displayFilename = item.filename || `${docId}_Improved.docx`;
+
+  let data = AppState.improvementAnalysesByDocId?.[docId] || window._currentImprovementData;
+  if (!data || data.doc_id !== docId) {
+    if (AppState.improvementAnalysesByDocId?.[docId]) {
+      data = AppState.improvementAnalysesByDocId[docId];
+    } else {
+      data = {
+        doc_id: docId,
+        original_text_preview: "Original candidate resume",
+        improved_resume_text: "Target-aligned resume optimization",
+        changes: []
+      };
+    }
+  }
+
+  const origBadge = document.getElementById("compare-original-badge");
+  const revBadge = document.getElementById("compare-revised-badge");
+  const origBody = document.getElementById("compare-original-body");
+  const revBody = document.getElementById("compare-revised-body");
+
+  // Automatically display side-by-side (Left: Original, Right: Improved) without clutter
+  setCompareViewMode("side-by-side");
+
+  const origResumeObj = (AppState.resumes || []).find(r => r.doc_id === docId);
+  const origFilename = origResumeObj?.original_filename || `${docId}.docx`;
+
+  if (origBadge) origBadge.textContent = `${origFilename} (Original Document)`;
+  if (revBadge) revBadge.textContent = `${item.view_label || ('View ' + (idx + 1))} — ${displayFilename} (Improved Document)`;
+
+  if (origBody) {
+    origBody.innerHTML = `
+      <div style="text-align:center; padding:3rem 1rem; color:var(--text-muted);">
+        <div class="spinner" style="margin:0 auto 1rem;"></div>
+        <div>Loading original candidate file...</div>
+      </div>
+    `;
+    origBody.scrollTop = 0;
+  }
+  if (revBody) {
+    revBody.innerHTML = `
+      <div style="text-align:center; padding:3rem 1rem; color:var(--text-muted);">
+        <div class="spinner" style="margin:0 auto 1rem;"></div>
+        <div>Loading improved document format...</div>
+      </div>
+    `;
+    revBody.scrollTop = 0;
+  }
+
+  // Populate changes bar if present
+  const allChanges = data.changes || [];
+  renderComparisonChangesBar(allChanges);
+
+  try {
+    // 1. Fetch and render actual original document
+    let origLoaded = false;
+    try {
+      const origPreview = await API.getResumePreview(docId);
+      const isPdf = !!(origPreview && origPreview.is_pdf && origPreview.pdf_stream_url);
+      const isOrigDocx = (origPreview?.is_docx === true) ||
+                         (origPreview?.filename && origPreview.filename.toLowerCase().endsWith(".docx")) ||
+                         (origPreview?.mime_type && origPreview.mime_type.includes("wordprocessingml"));
+
+      if (isPdf) {
+        origBody.innerHTML = `
+          <iframe src="${origPreview.pdf_stream_url}" style="width:100%; height:100%; min-height:680px; border:none; border-radius:4px; background:#fff;"></iframe>
+        `;
+        AppState.compareOriginalPages = [];
+        origLoaded = true;
+      } else if (isOrigDocx && window.docx) {
+        try {
+          const origUrl = origPreview.docx_stream_url || origPreview.stream_url || `/api/resumes/${encodeURIComponent(docId)}/stream`;
+          const origResp = await fetch(origUrl);
+          if (!origResp.ok) throw new Error(`HTTP ${origResp.status} loading original candidate Word document`);
+          const origBuffer = await origResp.arrayBuffer();
+          origBody.innerHTML = "";
+          await window.docx.renderAsync(origBuffer, origBody, null, {
+            className: "docx",
+            inWrapper: true,
+            ignoreWidth: false,
+            ignoreHeight: false,
+            breakPages: true,
+            useBase64URL: true
+          });
+          AppState.compareOriginalPages = [];
+          origLoaded = true;
+        } catch (docxErr) {
+          console.warn("Original docx render fallback:", docxErr);
+          const fallbackContent = (origPreview && origPreview.pages && origPreview.pages.length > 0)
+            ? origPreview.pages[0]
+            : `<div class="compare-doc-page">${data.original_text_preview || 'Original candidate resume'}</div>`;
+          origBody.innerHTML = `<div class="compare-doc-page">${fallbackContent}</div>`;
+          origLoaded = true;
+        }
+      } else {
+        AppState.compareOriginalPages = (origPreview && origPreview.pages && origPreview.pages.length > 0)
+          ? origPreview.pages
+          : [`<div class="compare-doc-page">${data.original_text_preview || 'Original candidate resume'}</div>`];
+        origBody.innerHTML = AppState.compareOriginalPages[0] || "";
+        origLoaded = true;
+      }
+    } catch (e) {
+      console.warn("Error fetching original preview:", e);
+      origBody.innerHTML = `<div class="compare-doc-page">${escapeHtml(data.original_text_preview || 'Original candidate resume')}</div>`;
+    }
+    origBody.scrollTop = 0;
+
+    // 2. Fetch and render actual improved Word document (.docx) using versionId
+    const revisedHtml = data.improved_resume_text || data.original_text_preview || "";
+    let revLoaded = false;
+    if (versionId && window.docx) {
+      try {
+        const revUrl = `/api/versions/${encodeURIComponent(versionId)}/file`;
+        const revResp = await fetch(revUrl);
+        if (revResp.ok) {
+          const revBuffer = await revResp.arrayBuffer();
+          revBody.innerHTML = "";
+          await window.docx.renderAsync(revBuffer, revBody, null, {
+            className: "docx",
+            inWrapper: true,
+            ignoreWidth: false,
+            ignoreHeight: false,
+            breakPages: true,
+            useBase64URL: true
+          });
+          revLoaded = true;
+        }
+      } catch (revDocxErr) {
+        console.warn("Revised docx render fallback:", revDocxErr);
+      }
+    }
+    if (!revLoaded) {
+      revBody.innerHTML = `<div class="compare-doc-page">${revisedHtml}</div>`;
+    }
+    revBody.scrollTop = 0;
+
+    // Fit previews smoothly to available column width
+    fitCompareDocxPanels();
+
+    // 3. Apply visual difference markers: Red in Original, Green in Revised
+    setTimeout(() => {
+      allChanges.forEach(c => {
+        if (c.original_text) {
+          highlightTextInElement(origBody, c.original_text, "compare-highlight-del", `compare-orig-${c.id}`);
+        }
+        if (c.proposed_text) {
+          highlightTextInElement(revBody, c.proposed_text, "compare-highlight-add", `compare-rev-${c.id}`);
+        }
+      });
+      fitCompareDocxPanels();
+      // Setup synchronized scrolling
+      setupCompareSyncScroll();
+    }, 150);
+
+    const pageControls = document.getElementById("compare-page-controls");
+    if (pageControls) pageControls.style.display = "none";
+  } catch (err) {
+    console.error("renderVersionComparisonAtIndex error:", err);
+    if (origBody && !origBody.textContent.trim()) origBody.innerHTML = `<div class="compare-doc-page">${escapeHtml(data.original_text_preview || 'Original candidate resume')}</div>`;
+    if (revBody && !revBody.textContent.trim()) revBody.innerHTML = `<div class="compare-doc-page">${escapeHtml(data.improved_resume_text || data.original_text_preview || 'Improved candidate resume')}</div>`;
+  }
+}
+
+function renderCompareDocumentPages(pageIdx, isPdfOrig = false) {
+  const origBody = document.getElementById("compare-original-body");
+  const revBody = document.getElementById("compare-revised-body");
+  const origPages = AppState.compareOriginalPages || [];
+  const revPages = AppState.compareRevisedPages || [];
+  const total = AppState.compareTotalPages || 1;
+
+  if (origBody && !isPdfOrig && origPages[pageIdx]) {
+    origBody.innerHTML = `<div class="compare-doc-page">${origPages[pageIdx]}</div>`;
+    origBody.scrollTop = 0;
+  }
+  if (revBody && revPages[pageIdx]) {
+    revBody.innerHTML = `<div class="compare-doc-page">${revPages[pageIdx]}</div>`;
+    revBody.scrollTop = 0;
+  }
 
   const pageControls = document.getElementById("compare-page-controls");
   const pageCounter = document.getElementById("compare-page-counter");
@@ -2644,25 +3539,334 @@ function renderComparePage(pageIdx) {
   const pageNext = document.getElementById("compare-page-next");
 
   if (pageControls) {
-    if (totalPages > 1) {
-      pageControls.style.display = "flex";
-      if (pageCounter) pageCounter.textContent = `Page ${pageIdx + 1} of ${totalPages}`;
-      if (pagePrev) pagePrev.disabled = (pageIdx <= 0);
-      if (pageNext) pageNext.disabled = (pageIdx >= totalPages - 1);
-    } else {
-      pageControls.style.display = "none";
-    }
+    pageControls.style.display = total > 1 ? "flex" : "none";
+    if (pageCounter) pageCounter.textContent = `Page ${pageIdx + 1} of ${total}`;
+    if (pagePrev) pagePrev.disabled = (pageIdx <= 0);
+    if (pageNext) pageNext.disabled = (pageIdx >= total - 1 || total <= 1);
   }
 }
 
 function navigateComparePages(direction) {
-  const blocks = AppState.compareBlocks || [];
-  const pageSize = AppState.comparePageSize || 25;
-  const totalPages = Math.ceil(blocks.length / pageSize) || 1;
+  const total = AppState.compareTotalPages || 1;
   const nextIdx = AppState.comparePageIndex + direction;
-  if (nextIdx >= 0 && nextIdx < totalPages) {
+  if (nextIdx >= 0 && nextIdx < total) {
     AppState.comparePageIndex = nextIdx;
-    renderComparePage(nextIdx);
+    renderCompareDocumentPages(nextIdx, !AppState.compareOriginalPages.length);
+  }
+}
+
+function fitCompareDocxPanels() {
+  const origBody = document.getElementById("compare-original-body");
+  const revBody = document.getElementById("compare-revised-body");
+
+  [origBody, revBody].forEach(body => {
+    if (!body) return;
+    const availableWidth = body.clientWidth - 32;
+    if (availableWidth <= 100) return;
+
+    const sections = body.querySelectorAll(".docx-wrapper > section.docx, .docx-viewer-wrapper > section.docx-viewer, section.docx, section.docx-viewer, .compare-doc-page");
+    sections.forEach(sec => {
+      let naturalWidth = parseFloat(sec.dataset.naturalWidth);
+      if (!naturalWidth || isNaN(naturalWidth)) {
+        naturalWidth = sec.offsetWidth || 816;
+        if (naturalWidth < 600) naturalWidth = 816;
+        sec.dataset.naturalWidth = naturalWidth;
+      }
+
+      const targetScale = Math.min(1.0, availableWidth / naturalWidth);
+      if (targetScale < 0.99) {
+        sec.style.zoom = targetScale;
+      } else {
+        sec.style.zoom = "1";
+      }
+    });
+  });
+}
+
+
+window.addEventListener("resize", () => {
+  if (document.getElementById("version-compare-modal")?.classList.contains("active")) {
+    fitCompareDocxPanels();
+  }
+});
+
+function setupCompareSyncScroll() {
+  const origEl = document.getElementById("compare-original-body");
+  const revEl = document.getElementById("compare-revised-body");
+  if (!origEl || !revEl) return;
+
+  let activeScroller = null;
+  let scrollTimer = null;
+
+  function sync(source, target) {
+    if (activeScroller && activeScroller !== source) return;
+    activeScroller = source;
+
+    if (scrollTimer) clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(() => {
+      activeScroller = null;
+    }, 50);
+
+    requestAnimationFrame(() => {
+      const sourceMax = source.scrollHeight - source.clientHeight;
+      const targetMax = target.scrollHeight - target.clientHeight;
+      if (sourceMax > 0 && targetMax > 0) {
+        const ratio = source.scrollTop / sourceMax;
+        target.scrollTop = Math.round(ratio * targetMax);
+      } else {
+        target.scrollTop = source.scrollTop;
+      }
+    });
+  }
+
+  origEl.onscroll = () => sync(origEl, revEl);
+  revEl.onscroll = () => sync(revEl, origEl);
+}
+
+// ==========================================
+// WORDCRAFT FULL WORD PROCESSOR INTEGRATION
+// ==========================================
+window._currentWordCraftDocId = null;
+
+async function openCandidateFolder(docId) {
+  const targetDocId = docId || window._currentWordCraftDocId || AppState.activeImprovementDocId || window._currentImprovementData?.doc_id;
+  if (!targetDocId) {
+    showToast("Please select a candidate resume first.", "warning");
+    return;
+  }
+  try {
+    showToast("Opening candidate folder in Windows Explorer...", "info");
+    const res = await API.openFolder(targetDocId);
+    if (res && res.message) {
+      showToast(res.message, "success");
+    } else {
+      showToast("Opened candidate folder in Windows Explorer.", "success");
+    }
+  } catch (err) {
+    showToast(`Could not open folder: ${err.message}`, "error");
+  }
+}
+
+function openWordCraftEditorModal(docId) {
+  const targetDocId = docId || AppState.activeImprovementDocId || (window._currentImprovementData ? window._currentImprovementData.doc_id : null) || AppState.selectedResumeDocId;
+  window._currentWordCraftDocId = targetDocId;
+
+  // Update candidate name / doc details in header
+  const subtitleEl = document.getElementById("wordcraft-modal-subtitle");
+  let candName = "Candidate Resume";
+  const resDoc = AppState.resumes?.find(r => r.doc_id === targetDocId) || AppState.previewList?.find(r => r.doc_id === targetDocId);
+  if (resDoc && (resDoc.candidate_name || resDoc.full_name)) {
+    candName = resDoc.candidate_name || resDoc.full_name;
+  } else if (window._currentImprovementData && window._currentImprovementData.candidate_name) {
+    candName = window._currentImprovementData.candidate_name;
+  }
+  if (subtitleEl) {
+    subtitleEl.textContent = `Document: ${candName} (.docx) · Full Word Processor (Ribbon, Tables, Styles, Layout, Track Changes)`;
+  }
+
+  // Load WordCraft iframe pointing to the selected candidate's document
+  const versionId = window._lastSavedVersionIdByDoc?.[targetDocId] || window._currentImprovementData?.version_id;
+  let docUrl = "";
+  if (versionId) {
+    docUrl = `/api/versions/${encodeURIComponent(versionId)}/file`;
+  } else if (targetDocId) {
+    docUrl = `/api/resumes/${encodeURIComponent(targetDocId)}/stream`;
+  }
+  const safeFilename = `${candName.replace(/[^a-zA-Z0-9_-]/g, '_')}_resume.docx`;
+  const targetSrc = docUrl 
+    ? `/static/wordcraft/index.html?doc_url=${encodeURIComponent(docUrl)}&filename=${encodeURIComponent(safeFilename)}&t=${Date.now()}`
+    : `/static/wordcraft/index.html`;
+
+  const iframe = document.getElementById("wordcraft-iframe");
+  if (iframe) {
+    iframe.src = targetSrc;
+    setTimeout(() => {
+      try {
+        if (iframe.contentWindow && docUrl) {
+          iframe.contentWindow.postMessage({ type: 'LOAD_DOCX', url: docUrl, filename: safeFilename }, '*');
+        }
+      } catch (e) {}
+    }, 1500);
+  }
+
+  openModal("wordcraft-editor-modal");
+}
+
+function closeWordCraftEditorModal() {
+  closeModal("wordcraft-editor-modal");
+}
+
+async function getWordCraftEditedBlob() {
+  const iframe = document.getElementById("wordcraft-iframe");
+  if (!iframe || !iframe.contentWindow) return null;
+
+  // 1. Direct access if already captured
+  if (iframe.contentWindow._lastExportedDocxBlob) {
+    return iframe.contentWindow._lastExportedDocxBlob;
+  }
+
+  // 2. Trigger save in WordCraft canvas
+  try {
+    iframe.contentWindow.postMessage({ type: "TRIGGER_SAVE" }, "*");
+  } catch (e) {}
+
+  // Wait briefly for WordCraft export handler to run
+  await new Promise(r => setTimeout(r, 600));
+  if (iframe.contentWindow._lastExportedDocxBlob) {
+    return iframe.contentWindow._lastExportedDocxBlob;
+  }
+
+  // 3. Fallback: fetch currently loaded file stream
+  const targetDocId = window._currentWordCraftDocId || AppState.activeImprovementDocId;
+  const versionId = window._lastSavedVersionIdByDoc?.[targetDocId] || window._currentImprovementData?.version_id;
+  const url = versionId ? `/api/versions/${encodeURIComponent(versionId)}/file` : (targetDocId ? `/api/resumes/${encodeURIComponent(targetDocId)}/stream` : null);
+  if (url) {
+    try {
+      const resp = await fetch(url);
+      if (resp.ok) return await resp.blob();
+    } catch (e) {}
+  }
+  return null;
+}
+
+async function saveWordCraftDocument() {
+  const docId = window._currentWordCraftDocId || AppState.activeImprovementDocId;
+  if (!docId) {
+    showToast("No active document selected to save", "warning");
+    return;
+  }
+
+  const btn = document.getElementById("wordcraft-save-btn");
+  const origText = btn ? btn.innerHTML : "";
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = "Saving...";
+  }
+
+  try {
+    const blob = await getWordCraftEditedBlob();
+    if (!blob) {
+      showToast("Could not retrieve document from editor", "error");
+      return;
+    }
+
+    const res = await API.saveEditorDocx(docId, blob, "Direct edits saved via WordCraft Editor");
+    if (res && res.version_id) {
+      if (!window._lastSavedVersionIdByDoc) window._lastSavedVersionIdByDoc = {};
+      window._lastSavedVersionIdByDoc[docId] = res.version_id;
+      if (window._currentImprovementData) {
+        window._currentImprovementData.version_id = res.version_id;
+      }
+      showToast(`Document changes saved successfully as revision ${res.version_id}!`, "success");
+      loadVersionHistory(docId);
+      await refreshDataCaches();
+    }
+  } catch (err) {
+    showToast(`Error saving editor changes: ${err.message}`, "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origText;
+    }
+  }
+}
+
+async function saveWordCraftToLibrary() {
+  const docId = window._currentWordCraftDocId || AppState.activeImprovementDocId;
+  if (!docId) {
+    showToast("No active document selected", "warning");
+    return;
+  }
+
+  const btn = document.getElementById("wordcraft-save-library-btn");
+  const origText = btn ? btn.innerHTML : "";
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = "Saving to Library...";
+  }
+
+  try {
+    const blob = await getWordCraftEditedBlob();
+    const res = await API.saveEditorToLibrary(docId, blob, `Saved from WordCraft editor based on ${docId}`);
+    if (res && res.doc_id) {
+      showToast(`Saved as new document ${res.doc_id} in Resume Library & IKM!`, "success");
+      await loadLibrary();
+      await refreshDataCaches();
+    }
+  } catch (err) {
+    showToast(`Error saving to Library: ${err.message}`, "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origText;
+    }
+  }
+}
+
+async function downloadWordCraftDocument() {
+  const docId = window._currentWordCraftDocId || AppState.activeImprovementDocId;
+  if (!docId) {
+    showToast("No active document selected to download", "warning");
+    return;
+  }
+
+  showToast("Preparing document download...", "info");
+  const blob = await getWordCraftEditedBlob();
+  if (blob) {
+    const iframe = document.getElementById("wordcraft-iframe");
+    const fn = (iframe && iframe.contentWindow && iframe.contentWindow._lastExportedFilename) || `${docId}_edited_resume.docx`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fn;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    showToast("Downloaded latest edited Word (.docx) file!", "success");
+    return;
+  }
+
+  // If a saved version exists, download the latest saved revision
+  const versionId = window._lastSavedVersionIdByDoc?.[docId] || window._currentImprovementData?.version_id;
+  if (versionId) {
+    const a = document.createElement("a");
+    a.href = `/api/versions/${encodeURIComponent(versionId)}/file`;
+    a.download = `${docId}_${versionId}.docx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    showToast("Downloaded latest saved Word revision!", "success");
+    return;
+  }
+
+  // Fallback to streaming original candidate docx
+  const a = document.createElement("a");
+  a.href = `/api/resumes/${encodeURIComponent(docId)}/stream`;
+  a.download = `${docId}_resume.docx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+function reloadWordCraftFrame() {
+  const iframe = document.getElementById("wordcraft-iframe");
+  if (iframe) {
+    iframe.src = "/static/wordcraft/index.html?t=" + Date.now();
+  }
+}
+
+function loadWordCraftSample() {
+  const iframe = document.getElementById("wordcraft-iframe");
+  if (iframe) {
+    iframe.src = "/static/wordcraft/index.html?sample";
+  }
+}
+
+function loadWordCraftBlank() {
+  const iframe = document.getElementById("wordcraft-iframe");
+  if (iframe) {
+    iframe.src = "/static/wordcraft/index.html";
   }
 }
 
@@ -2737,13 +3941,13 @@ async function setChangeDecision(changeId, decision) {
   await triggerRecalculateScore();
 }
 
-async function bulkDecideAllChanges(decision) {
+async function bulkDecideAllChanges(decision, forceAll = false) {
   if (!window._currentImprovementData?.changes) return;
   const changes = window._currentImprovementData.changes;
 
   for (const c of changes) {
-    // If accepting all, skip any marked as user-confirmation required unless explicitly confirmed
-    if (decision === 'accepted' && c.requires_user_confirmation) {
+    // If accepting all, skip any marked as user-confirmation required unless explicitly confirmed or forceAll is true
+    if (decision === 'accepted' && c.requires_user_confirmation && !forceAll) {
       continue;
     }
     window._candidateDecisions[c.id] = decision;
@@ -2790,7 +3994,215 @@ async function bulkDecideAllChanges(decision) {
 
   updateDraftPreviewFromDecisions();
   await triggerRecalculateScore();
-  showToast(decision === 'accepted' ? "Accepted all eligible verified changes" : `Changes updated to ${decision}`, "info");
+  showToast(decision === 'accepted' ? (forceAll ? "✓ All changes accepted (including confirmation-required)" : "Accepted all eligible verified changes") : `Changes updated to ${decision}`, "info");
+}
+
+async function bulkAcceptAllAndProceed() {
+  const docId = AppState.activeImprovementDocId || window._currentImprovementData?.doc_id;
+  if (!docId) {
+    showToast("Please select a candidate resume first", "warning");
+    return;
+  }
+
+  const btn = document.getElementById("btn-accept-all-bottom");
+  const origBtnContent = btn ? btn.innerHTML : "";
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<span class="btn-spinner"></span> Applying & Persisting Changes...`;
+  }
+
+  try {
+    // 1. Accept all changes
+    await bulkDecideAllChanges('accepted', true);
+    showToast("Applying verified changes and updating document...", "info");
+
+    // 2. Persist to IKM without directly triggering file download
+    const res = await downloadImprovedWordResume(docId, true, false);
+    if (!res) return;
+
+    // 3. Multi-file queue scrolling:
+    // Maintain scrollback to queue banner when navigating between files,
+    // EXCEPT when the current file is the LAST file in the selected batch!
+    const docIds = (AppState.currentImprovementBatchDocIds && AppState.currentImprovementBatchDocIds.length > 0)
+      ? AppState.currentImprovementBatchDocIds
+      : Object.keys(AppState.improvementAnalysesByDocId || {});
+    if (docIds.length > 1) {
+      const currentIndex = docIds.indexOf(docId);
+      const isLastFile = (currentIndex !== -1 && currentIndex === docIds.length - 1);
+      if (!isLastFile) {
+        setTimeout(() => {
+          const queueEl = document.getElementById("improvement-queue-banner");
+          if (queueEl) {
+            queueEl.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        }, 250);
+      }
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origBtnContent;
+    }
+  }
+}
+
+async function bulkAcceptAllAndProceedToDownload() {
+  return bulkAcceptAllAndProceed();
+}
+
+function handleImprovementDownloadClick(targetDocId = null) {
+  const currentDocId = targetDocId || AppState.activeImprovementDocId || window._currentImprovementData?.doc_id;
+  const batchDocIds = (AppState.currentImprovementBatchDocIds && AppState.currentImprovementBatchDocIds.length > 0)
+    ? AppState.currentImprovementBatchDocIds
+    : Object.keys(AppState.improvementAnalysesByDocId || {});
+
+  // When multiple resumes are selected in the workflow:
+  if (batchDocIds.length > 1) {
+    renderMultiDownloadModal();
+    openModal("multi-download-modal");
+  } else {
+    // Single resume selected: download improved DOCX directly
+    downloadSingleAppliedDocx(currentDocId);
+  }
+}
+
+function renderMultiDownloadModal() {
+  const container = document.getElementById("multi-download-candidates-list");
+  if (!container) return;
+
+  const appliedEntries = Object.values(AppState.appliedImprovements || {});
+  const batchDocIds = AppState.currentImprovementBatchDocIds || [];
+  const relevantEntries = batchDocIds.length > 0
+    ? appliedEntries.filter(e => batchDocIds.includes(e.doc_id))
+    : appliedEntries;
+
+  if (relevantEntries.length === 0) {
+    container.innerHTML = `
+      <div style="text-align:center; padding:2rem 1rem; color:var(--text-muted);">
+        No candidates have successfully applied improvements yet.<br>Click <strong>Accept All Changes and Proceed</strong> on candidates first.
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = relevantEntries.map((entry, index) => {
+    const candName = escapeHtml(entry.full_name || entry.candidate_name || `Candidate ${index + 1}`);
+    const filename = escapeHtml(entry.filename || `${entry.doc_id}_Improved.docx`);
+    return `
+      <div style="display:flex; align-items:center; justify-content:space-between; padding:0.9rem 1.15rem; background:var(--bg-surface-subtle); border:1px solid var(--border-subtle); border-radius:var(--radius-md); gap:1rem;">
+        <div style="min-width:0; flex:1;">
+          <div style="font-weight:700; font-size:0.96rem; color:var(--text-main); margin-bottom:0.25rem;">${candName}</div>
+          <div style="font-size:0.8rem; color:var(--text-muted); text-overflow:ellipsis; overflow:hidden; white-space:nowrap;" title="${filename}">${filename}</div>
+        </div>
+        <button type="button" class="btn btn-primary btn-sm" onclick="downloadSingleAppliedDocx('${entry.doc_id}')" style="display:inline-flex; align-items:center; gap:0.4rem; font-weight:600; padding:0.45rem 0.95rem; flex-shrink:0;">
+          <span style="font-size:0.9rem;">⬇</span> Download
+        </button>
+      </div>
+    `;
+  }).join("");
+}
+
+function downloadSingleAppliedDocx(docId) {
+  const entry = AppState.appliedImprovements?.[docId];
+  if (!entry) {
+    showToast("Please apply changes first before downloading", "warning");
+    return;
+  }
+  const downloadUrl = entry.download_url || (entry.version_id ? `/api/versions/${encodeURIComponent(entry.version_id)}/file` : `/api/improvements/export/word/${encodeURIComponent(docId)}`);
+  const filename = entry.filename || `${docId}_Improved.docx`;
+  const a = document.createElement("a");
+  a.href = downloadUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  showToast(`Downloading improved resume: ${filename}`, "success");
+}
+
+function previewCurrentImprovedResume(targetDocId = null) {
+  const currentDocId = targetDocId || AppState.activeImprovementDocId || window._currentImprovementData?.doc_id;
+  const appliedList = getAppliedImprovementsList();
+  if (!appliedList || appliedList.length === 0) {
+    showToast("Preview is available only after changes are applied via 'Accept All Changes and Proceed'.", "warning");
+    return;
+  }
+  openImprovedResumePreview(currentDocId);
+}
+
+function openImprovedResumePreview(preferredDocId = null) {
+  const appliedList = getAppliedImprovementsList();
+  if (!appliedList || appliedList.length === 0) {
+    showToast("No resume improvements have been applied yet. Click 'Accept All Changes and Proceed' first.", "warning");
+    return;
+  }
+
+  AppState.isImprovedPreviewMode = true;
+  AppState.previewList = appliedList.map((entry, index) => {
+    const viewLabel = `View ${index + 1}`;
+    const displayFilename = entry.filename || `${entry.doc_id}_Improved.docx`;
+    return {
+      doc_id: entry.library_doc_id || entry.doc_id,
+      original_doc_id: entry.doc_id,
+      version_id: entry.version_id,
+      full_name: entry.full_name || displayFilename,
+      original_filename: displayFilename,
+      filename: displayFilename,
+      view_label: viewLabel,
+      is_improved: true
+    };
+  });
+
+  let initialIdx = 0;
+  if (preferredDocId) {
+    const foundIdx = AppState.previewList.findIndex(item =>
+      item.original_doc_id === preferredDocId || item.doc_id === preferredDocId
+    );
+    if (foundIdx !== -1) initialIdx = foundIdx;
+  }
+
+  AppState.previewIndex = initialIdx;
+  renderImprovedTabsBar(initialIdx);
+  renderResumePreviewAtIndex(initialIdx);
+  openModal("resume-preview-modal");
+}
+
+function renderImprovedTabsBar(activeIdx) {
+  const tabsBar = document.getElementById("preview-improved-tabs-bar");
+  if (!tabsBar) return;
+  if (!AppState.isImprovedPreviewMode || !AppState.previewList || AppState.previewList.length === 0) {
+    tabsBar.style.display = "none";
+    tabsBar.innerHTML = "";
+    return;
+  }
+
+  tabsBar.style.display = "flex";
+  tabsBar.innerHTML = AppState.previewList.map((item, idx) => {
+    const isActive = idx === activeIdx;
+    const viewLabel = item.view_label || `View ${idx + 1}`;
+    const filename = item.filename || item.original_filename || `Resume_${idx + 1}.docx`;
+    return `
+      <button
+        type="button"
+        class="preview-improved-tab-btn ${isActive ? 'active' : ''}"
+        onclick="switchImprovedPreviewIndex(${idx})"
+        title="View improved resume: ${escapeHtml(filename)}"
+      >
+        <span class="tab-view-num">${escapeHtml(viewLabel)} &mdash;</span>
+        <span class="tab-filename" style="max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(filename)}</span>
+      </button>
+    `;
+  }).join("");
+}
+
+function switchImprovedPreviewIndex(newIdx) {
+  if (!AppState.previewList || newIdx < 0 || newIdx >= AppState.previewList.length) return;
+  AppState.previewIndex = newIdx;
+  renderResumePreviewAtIndex(newIdx);
+  renderImprovedTabsBar(newIdx);
+}
+
+async function bulkAcceptAllAndScrollDown() {
+  return bulkAcceptAllAndProceedToDownload();
 }
 
 function updateDraftPreviewFromDecisions() {
@@ -2858,18 +4270,22 @@ async function saveRevisedVersionDraft(docId) {
   const summaryInput = document.getElementById("version-change-summary");
   const contentInput = document.getElementById("version-revised-content");
 
-  if (!summaryInput.value.trim() || !contentInput.value.trim()) {
+  const summaryVal = (summaryInput?.value || "").trim() || window._currentImprovementData?.change_summary || "Target-aligned resume optimization with verified STAR metrics.";
+  const contentVal = (contentInput?.value || "").trim() || window._currentImprovementData?.improved_resume_text || window._currentImprovementData?.original_text_preview || "";
+
+  if (!summaryVal && !contentVal) {
     showToast("Please provide both change summary and content", "warning");
     return;
   }
 
+  const piiFromState = AppState.candidatePersonalDetails[docId] || {};
   const personalDetails = {
-    name: document.getElementById("improve-cand-name")?.value.trim(),
-    role: document.getElementById("improve-cand-role")?.value.trim(),
-    phone: document.getElementById("improve-cand-phone")?.value.trim(),
-    email: document.getElementById("improve-cand-email")?.value.trim(),
-    location: document.getElementById("improve-cand-location")?.value.trim(),
-    links: document.getElementById("improve-cand-links")?.value.trim()
+    name: document.getElementById(`inp-${docId}-name`)?.value.trim() || document.getElementById("improve-cand-name")?.value.trim() || piiFromState.name || "",
+    role: document.getElementById(`inp-${docId}-role`)?.value.trim() || document.getElementById("improve-cand-role")?.value.trim() || piiFromState.role || "",
+    phone: document.getElementById(`inp-${docId}-phone`)?.value.trim() || document.getElementById("improve-cand-phone")?.value.trim() || piiFromState.phone || "",
+    email: document.getElementById(`inp-${docId}-email`)?.value.trim() || document.getElementById("improve-cand-email")?.value.trim() || piiFromState.email || "",
+    location: document.getElementById(`inp-${docId}-location`)?.value.trim() || document.getElementById("improve-cand-location")?.value.trim() || piiFromState.location || "",
+    links: document.getElementById(`inp-${docId}-links`)?.value.trim() || document.getElementById("improve-cand-links")?.value.trim() || piiFromState.links || ""
   };
 
   const approvedChanges = [];
@@ -2885,50 +4301,71 @@ async function saveRevisedVersionDraft(docId) {
   });
 
   try {
-    const editorCanvas = document.getElementById("word-editor-canvas");
-    const contentToSave = (editorCanvas && editorCanvas.innerHTML.trim()) ? editorCanvas.innerHTML.trim() : (contentInput ? contentInput.value.trim() : "");
-    const res = await API.saveRevisedVersion(docId, summaryInput.value.trim(), contentToSave, true, personalDetails, approvedChanges);
-    showToast(`Saved version ${res.version_id} successfully as Microsoft Word (.docx)!`, "success");
+    const res = await API.saveDraft(docId, summaryVal, contentVal, personalDetails, approvedChanges);
+    if (res && res.actual_score !== undefined) {
+      const scoreEl = document.getElementById("recalculated-score");
+      const deltaEl = document.getElementById("recalculated-delta");
+      const explEl = document.getElementById("score-recalculation-explanation");
+      if (scoreEl) scoreEl.textContent = res.actual_score;
+      if (deltaEl) {
+        if (res.score_delta > 0) {
+          deltaEl.style.display = "inline-block";
+          deltaEl.textContent = `+${res.score_delta} pts`;
+        } else {
+          deltaEl.style.display = "none";
+        }
+      }
+      if (explEl && res.score_explanation) explEl.textContent = res.score_explanation;
+    }
+    showToast(`Draft saved successfully as ${res.doc_id} in Resume Library & IKM!`, "success");
     loadVersionHistory(docId);
+    await loadLibrary();
+    await refreshDataCaches();
   } catch (err) {
-    showToast(`Error saving version: ${err.message}`, "error");
+    showToast(`Error saving draft: ${err.message}`, "error");
   }
 }
 
-async function downloadImprovedWordResume(docId) {
+async function downloadImprovedWordResume(docId, showToastNotice = true, shouldDownload = true) {
   if (!docId) {
     showToast("Please select a candidate resume first", "warning");
     return;
   }
+
+  // Prevent rapid double-clicks causing database concurrency conflicts
+  if (window._isDownloadingWord) {
+    showToast("Word document generation is in progress, please wait a moment...", "info");
+    return;
+  }
+
   const summaryInput = document.getElementById("version-change-summary");
   const contentInput = document.getElementById("version-revised-content");
-  const editorCanvas = document.getElementById("word-editor-canvas");
   const jobSelect = document.getElementById("improve-job-select");
 
   const summary = summaryInput ? summaryInput.value.trim() : "Updated Professional Word Resume";
-  let content = "";
-  if (editorCanvas && editorCanvas.innerHTML.trim()) {
-    content = editorCanvas.innerHTML.trim();
-  } else if (contentInput) {
-    content = contentInput.value.trim();
-  }
+  const content = contentInput ? contentInput.value.trim() : "";
   const targetRole = (jobSelect && jobSelect.options[jobSelect.selectedIndex]?.text) || "Senior Technical Professional";
 
-  const btn = document.getElementById("btn-agent-download-word");
+  const btn = document.getElementById("btn-accept-all-bottom") || document.getElementById("btn-agent-download-word");
   const origBtnText = btn ? btn.innerHTML : "";
   if (btn) {
     btn.disabled = true;
-    btn.innerHTML = "⏳ Generating Word (.docx)...";
+    btn.innerHTML = shouldDownload
+      ? `<span class="btn-spinner"></span> Generating & Downloading Resume...`
+      : `<span class="btn-spinner"></span> Applying & Persisting Changes...`;
   }
 
+  window._isDownloadingWord = true;
+
   try {
+    const piiFromState = AppState.candidatePersonalDetails[docId] || {};
     const personalDetails = {
-      name: document.getElementById("improve-cand-name")?.value.trim(),
-      role: document.getElementById("improve-cand-role")?.value.trim(),
-      phone: document.getElementById("improve-cand-phone")?.value.trim(),
-      email: document.getElementById("improve-cand-email")?.value.trim(),
-      location: document.getElementById("improve-cand-location")?.value.trim(),
-      links: document.getElementById("improve-cand-links")?.value.trim()
+      name: document.getElementById(`inp-${docId}-name`)?.value.trim() || document.getElementById("improve-cand-name")?.value.trim() || piiFromState.name || "",
+      role: document.getElementById(`inp-${docId}-role`)?.value.trim() || document.getElementById("improve-cand-role")?.value.trim() || piiFromState.role || "",
+      phone: document.getElementById(`inp-${docId}-phone`)?.value.trim() || document.getElementById("improve-cand-phone")?.value.trim() || piiFromState.phone || "",
+      email: document.getElementById(`inp-${docId}-email`)?.value.trim() || document.getElementById("improve-cand-email")?.value.trim() || piiFromState.email || "",
+      location: document.getElementById(`inp-${docId}-location`)?.value.trim() || document.getElementById("improve-cand-location")?.value.trim() || piiFromState.location || "",
+      links: document.getElementById(`inp-${docId}-links`)?.value.trim() || document.getElementById("improve-cand-links")?.value.trim() || piiFromState.links || ""
     };
 
     const approvedChanges = [];
@@ -2944,20 +4381,110 @@ async function downloadImprovedWordResume(docId) {
     });
 
     const res = await API.generateWordResume(docId, content, summary, targetRole, personalDetails, approvedChanges);
+    if (res && res.actual_score !== undefined) {
+      const scoreEl = document.getElementById("recalculated-score");
+      const deltaEl = document.getElementById("recalculated-delta");
+      const explEl = document.getElementById("score-recalculation-explanation");
+      if (scoreEl) scoreEl.textContent = res.actual_score;
+      if (deltaEl) {
+        if (res.score_delta > 0) {
+          deltaEl.style.display = "inline-block";
+          deltaEl.textContent = `+${res.score_delta} pts`;
+        } else {
+          deltaEl.style.display = "none";
+        }
+      }
+      if (explEl && res.score_explanation) explEl.textContent = res.score_explanation;
+    }
 
-    const a = document.createElement("a");
-    a.href = res.download_url;
-    a.download = res.filename || `${docId}_Improved_Resume.docx`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    if (res && res.version_id) {
+      if (!window._lastSavedVersionIdByDoc) window._lastSavedVersionIdByDoc = {};
+      window._lastSavedVersionIdByDoc[docId] = res.version_id;
+      if (res.library_doc_id) {
+        if (!window._lastSavedLibraryDocIdByDoc) window._lastSavedLibraryDocIdByDoc = {};
+        window._lastSavedLibraryDocIdByDoc[docId] = res.library_doc_id;
+      }
+      if (window._currentImprovementData) {
+        window._currentImprovementData.version_id = res.version_id;
+      }
 
-    showToast("Downloaded improved Word (.docx) resume with layout preserved!", "success");
+      // Record applied status for this specific file
+      const candidateInfo = (AppState.resumes || []).find(r => r.doc_id === docId);
+      const pii = AppState.candidatePersonalDetails?.[docId];
+      const fullName = pii?.name || candidateInfo?.full_name || candidateInfo?.candidate_name || res.filename || docId;
+
+      if (!AppState.appliedImprovements) AppState.appliedImprovements = {};
+      AppState.appliedImprovements[docId] = {
+        doc_id: docId,
+        library_doc_id: res.library_doc_id || null,
+        version_id: res.version_id,
+        filename: res.filename || `${docId}_Improved.docx`,
+        full_name: fullName,
+        download_url: res.download_url,
+        timestamp: Date.now()
+      };
+
+      // Enable the preview button immediately if on current active candidate
+      const previewBtn = document.getElementById("btn-preview-improved-resume");
+      if (previewBtn && (AppState.activeImprovementDocId === docId || !AppState.activeImprovementDocId)) {
+        previewBtn.disabled = false;
+        previewBtn.style.opacity = "1";
+        previewBtn.style.cursor = "pointer";
+        previewBtn.title = "Preview Improved Resume";
+      }
+
+      // Enable the compare button immediately if on current active candidate
+      const compareBtn = document.getElementById("btn-compare-versions");
+      if (compareBtn && (AppState.activeImprovementDocId === docId || !AppState.activeImprovementDocId)) {
+        compareBtn.disabled = false;
+        compareBtn.style.opacity = "1";
+        compareBtn.style.cursor = "pointer";
+        compareBtn.title = "Compare Original vs Improved";
+      }
+
+      // Enable the download button immediately if on current active candidate and glow
+      const downloadBtn = document.getElementById("btn-download-improved");
+      if (downloadBtn && (AppState.activeImprovementDocId === docId || !AppState.activeImprovementDocId)) {
+        downloadBtn.disabled = false;
+        downloadBtn.style.opacity = "1";
+        downloadBtn.style.cursor = "pointer";
+        downloadBtn.title = "Download Improved Resume";
+
+        // Briefly highlight/glow download button for approximately 0.5-1s
+        downloadBtn.classList.remove("btn-download-glow");
+        void downloadBtn.offsetWidth; // trigger reflow
+        downloadBtn.classList.add("btn-download-glow");
+        setTimeout(() => {
+          downloadBtn.classList.remove("btn-download-glow");
+        }, 850);
+      }
+    }
+
+    if (shouldDownload) {
+      const a = document.createElement("a");
+      a.href = res.download_url;
+      a.download = res.filename || `${docId}_Improved_Resume.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      if (showToastNotice) {
+        showToast("Downloaded improved Word (.docx) resume with layout preserved!", "success");
+      }
+    } else if (showToastNotice) {
+      showToast("✓ All changes successfully applied and persisted! You can now Preview, Compare, or Download.", "success");
+    }
     loadVersionHistory(docId);
     await refreshDataCaches();
+    if (typeof loadLibrary === "function") {
+      loadLibrary().catch(() => {});
+    }
+    return res;
   } catch (err) {
     showToast(`Error generating Word resume: ${err.message}`, "error");
+    return null;
   } finally {
+    window._isDownloadingWord = false;
     if (btn) {
       btn.disabled = false;
       btn.innerHTML = origBtnText;
@@ -2993,7 +4520,7 @@ async function loadVersionHistory(docId) {
               <div style="font-size:0.78rem; color:var(--text-muted);">${v.change_summary}</div>
               <div style="font-size:0.72rem; color:var(--text-dim); margin-top:2px;">Created by ${v.created_by} on ${formatDate(v.created_at)}</div>
             </div>
-            <a href="/api/versions/${v.version_id}/file" download class="btn btn-secondary btn-sm">📥 Download Word (.docx)</a>
+            <a href="/api/versions/${v.version_id}/file" download class="btn btn-secondary btn-sm">Download Word (.docx)</a>
           </div>
         `).join("")}
       </div>
@@ -3164,7 +4691,7 @@ function renderFollowupsRows(followups, days) {
       <td>${formatDate(item.next_action_at)}</td>
       <td>
         <div style="display:flex; flex-wrap:wrap; gap:0.35rem; align-items:center;">
-          <button class="btn btn-secondary btn-sm" onclick="viewCandidateDetailsModal('${item.doc_id}')" title="View candidate and contact details" style="padding:0.25rem 0.5rem; font-size:0.95rem; line-height:1;">👁️</button>
+          <button class="btn btn-secondary btn-sm" onclick="viewCandidateDetailsModal('${item.doc_id}')" title="View candidate and contact details" style="padding:0.3rem 0.55rem; display:inline-flex; align-items:center; justify-content:center;">${SVG_EYE_ICON}</button>
           <button class="btn btn-secondary btn-sm" onclick="openActionModal('${item.doc_id}')" title="Record recruiter action & notes">Action</button>
           <button class="btn btn-secondary btn-sm" onclick="openEscalationEmailModal('${item.doc_id}', ${item.days_inactive})" title="Send escalation email with resume attached">Email</button>
           <button class="btn btn-danger btn-sm" onclick="confirmDeleteResume('${item.doc_id}', '${escapeHtml(displayName)}')" title="Permanently delete this candidate">Delete</button>
@@ -3249,7 +4776,6 @@ function renderCandidateRemarksList(actions, currentStatus) {
   if (!actions || !actions.length) {
     listContainer.innerHTML = `
       <div style="text-align:center; padding:1.8rem; color:var(--text-dim); background:rgba(255,255,255,0.015); border-radius:6px;">
-        <span style="font-size:1.6rem; display:block; margin-bottom:0.4rem;">📝</span>
         No recruiter remarks recorded yet. Add the first observation or note above!
       </div>
     `;
@@ -3269,13 +4795,13 @@ function renderCandidateRemarksList(actions, currentStatus) {
       <div class="remark-item">
         <div class="remark-header">
           <div>
-            <span class="remark-author">👤 ${act.owner_id || 'Recruiter'}</span>
+            <span class="remark-author">${act.owner_id || 'Recruiter'}</span>
             <span class="file-status-badge ${isHired ? 'badge-hired' : 'badge-processing'}" style="${badgeStyle}; margin-left:6px;">${actionTypeLabel} (${statusLabel})</span>
           </div>
-          <span class="remark-time">🕒 ${timeStr}</span>
+          <span class="remark-time">${timeStr}</span>
         </div>
         <div class="remark-content">${escapeHtml(act.notes || "No additional remarks")}</div>
-        ${act.next_action_at ? `<div style="margin-top:0.35rem; font-size:0.74rem; color:#fde68a;">📅 Next action scheduled: ${formatDate(act.next_action_at)}</div>` : ''}
+        ${act.next_action_at ? `<div style="margin-top:0.35rem; font-size:0.74rem; color:#fde68a;">Next action scheduled: ${formatDate(act.next_action_at)}</div>` : ''}
       </div>
     `;
   }).join("");
@@ -3380,6 +4906,12 @@ async function submitRecordAction() {
     for (const docId of docIds) {
       await API.recordAction(docId, actionType, statusVal, notes, nextActionAt);
       AppState.candidateActionStates[docId] = statusVal;
+
+      const statusBadge = document.getElementById(`cand-status-badge-${docId}`);
+      if (statusBadge) {
+        statusBadge.className = `file-status-badge badge-${statusVal}`;
+        statusBadge.textContent = statusVal.replace('_', ' ');
+      }
 
       const group = document.getElementById(`actions-group-${docId}`);
       if (group) {
@@ -3594,6 +5126,7 @@ async function loadLibrary() {
 
   try {
     const list = await API.getResumes(query, status);
+    AppState.resumes = list;
     tbody.innerHTML = "";
 
     if (!list.length) {
@@ -3640,8 +5173,7 @@ async function loadLibrary() {
         <td>${formatDate(item.uploaded_at)}</td>
         <td>
           <div style="display:flex; gap:0.4rem; align-items:center;">
-            <button class="btn btn-secondary btn-sm" onclick="openResumePreview('${item.doc_id}')">Preview</button>
-            <button class="btn btn-secondary btn-sm" onclick="viewCandidateDetailsModal('${item.doc_id}')" title="View candidate and contact details" style="padding:0.25rem 0.5rem; font-size:0.95rem; line-height:1;">👁️</button>
+            <button class="btn btn-secondary btn-sm" onclick="viewCandidateDetailsModal('${item.doc_id}')" title="View candidate and contact details" style="padding:0.3rem 0.6rem; display:inline-flex; align-items:center; justify-content:center;">${SVG_EYE_ICON}</button>
             <button class="btn btn-danger btn-sm" onclick="confirmDeleteResume('${item.doc_id}', '${escapeHtml(displayName)}')">Delete</button>
           </div>
         </td>
@@ -3685,9 +5217,26 @@ async function viewCandidateDetailsModal(docId) {
   try {
     const pii = await API.getResumePII(docId);
     const resumeObj = (AppState.resumes || []).find(r => r.doc_id === docId);
-    const skills = resumeObj?.profile?.skills || [];
-    const experience = resumeObj?.profile?.experience_years || resumeObj?.profile?.experience || null;
-    const displayName = pii.name || resumeObj?.full_name || resumeObj?.candidate_name || docId;
+
+    const displayName = pii.name || resumeObj?.full_name || resumeObj?.candidate_name || `Candidate ${docId}`;
+    const filename = pii.filename || resumeObj?.original_filename || `${docId}.docx`;
+    const uploadedAt = pii.uploaded_at || resumeObj?.uploaded_at;
+    const skills = (pii.skills && pii.skills.length > 0) ? pii.skills : (resumeObj?.profile?.skills || []);
+
+    let expDisplay = "Not available";
+    if (pii.experience_display && typeof pii.experience_display === "string" && pii.experience_display.trim() !== "" && !pii.experience_display.includes("[object")) {
+      expDisplay = pii.experience_display;
+    } else if (typeof pii.experience_years === "number" && !isNaN(pii.experience_years) && pii.experience_years > 0) {
+      expDisplay = `${pii.experience_years} yrs`;
+    } else if (resumeObj?.profile?.experience_display && typeof resumeObj.profile.experience_display === "string" && !resumeObj.profile.experience_display.includes("[object")) {
+      expDisplay = resumeObj.profile.experience_display;
+    } else if (typeof resumeObj?.profile?.experience_years === "number" && !isNaN(resumeObj.profile.experience_years) && resumeObj.profile.experience_years > 0) {
+      expDisplay = `${resumeObj.profile.experience_years} yrs`;
+    }
+
+    if (expDisplay.includes("[object") || expDisplay.includes("NaN") || expDisplay.includes("null") || expDisplay.includes("undefined")) {
+      expDisplay = "Not available";
+    }
 
     content.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1.2rem; border-bottom:1px solid var(--border-subtle); padding-bottom:0.8rem;">
@@ -3696,8 +5245,9 @@ async function viewCandidateDetailsModal(docId) {
             ${escapeHtml(displayName)}
           </h3>
           <span style="font-size:0.8rem; color:var(--text-dim); font-family:var(--font-mono);">${docId}</span>
+          ${pii.title ? `<div style="font-size:0.84rem; color:var(--primary); font-weight:600; margin-top:0.2rem;">${escapeHtml(pii.title)}</div>` : ''}
         </div>
-        <button type="button" class="btn btn-secondary btn-sm" onclick="closeModal('candidate-pii-modal'); openResumePreview('${docId}')">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="closeModal('candidate-pii-modal'); openResumePreview('${docId}', (AppState.resumes || []))">
           Preview
         </button>
       </div>
@@ -3708,16 +5258,17 @@ async function viewCandidateDetailsModal(docId) {
           <div style="display:flex; flex-direction:column; gap:0.45rem;">
             <div><strong style="color:var(--text-dim); font-size:0.8rem;">Email:</strong> <span style="color:var(--text-main);">${escapeHtml(pii.email || "N/A")}</span></div>
             <div><strong style="color:var(--text-dim); font-size:0.8rem;">Phone:</strong> <span style="color:var(--text-main);">${escapeHtml(pii.phone || "N/A")}</span></div>
-            <div><strong style="color:var(--text-dim); font-size:0.8rem;">Location:</strong> <span style="color:var(--text-main);">${escapeHtml(pii.address || "N/A")}</span></div>
+            <div><strong style="color:var(--text-dim); font-size:0.8rem;">Location:</strong> <span style="color:var(--text-main);">${escapeHtml(pii.location || pii.address || "N/A")}</span></div>
+            ${pii.links ? `<div><strong style="color:var(--text-dim); font-size:0.8rem;">Links:</strong> <span style="color:var(--text-main); word-break:break-all;">${escapeHtml(pii.links)}</span></div>` : ''}
           </div>
         </div>
 
         <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:8px; padding:0.9rem;">
           <h4 style="font-size:0.82rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-dim); margin-bottom:0.6rem;">Document Details</h4>
           <div style="display:flex; flex-direction:column; gap:0.45rem;">
-            <div><strong style="color:var(--text-dim); font-size:0.8rem;">File:</strong> <span style="color:var(--text-main); word-break:break-all;">${escapeHtml(resumeObj?.original_filename || "N/A")}</span></div>
-            <div><strong style="color:var(--text-dim); font-size:0.8rem;">Uploaded:</strong> <span style="color:var(--text-main);">${formatDate(resumeObj?.uploaded_at)}</span></div>
-            ${experience ? `<div><strong style="color:var(--text-dim); font-size:0.8rem;">Experience:</strong> <span style="color:var(--text-main);">${escapeHtml(String(experience))} yrs</span></div>` : ''}
+            <div><strong style="color:var(--text-dim); font-size:0.8rem;">File:</strong> <span style="color:var(--text-main); word-break:break-all;">${escapeHtml(filename)}</span></div>
+            <div><strong style="color:var(--text-dim); font-size:0.8rem;">Uploaded:</strong> <span style="color:var(--text-main);">${formatDate(uploadedAt)}</span></div>
+            <div><strong style="color:var(--text-dim); font-size:0.8rem;">Experience:</strong> <span style="color:var(--text-main);">${escapeHtml(expDisplay)}</span></div>
           </div>
         </div>
       </div>
@@ -3732,7 +5283,7 @@ async function viewCandidateDetailsModal(docId) {
       ` : ''}
 
       <div style="font-size:0.72rem; color:var(--text-dim); text-align:right;">
-        🔒 Authorized Access Verified &bull; Decrypted for Recruiter View
+        Authorized Access Verified &bull; Decrypted for Recruiter View
       </div>
     `;
   } catch (err) {
@@ -3799,7 +5350,7 @@ function renderManageJobsList() {
         <div style="font-size: 0.8rem; color: var(--text-muted);">${j.preview_snippet || ""}</div>
       </div>
       <div>
-        <button class="btn btn-danger btn-sm" onclick="deleteJobOpening('${j.job_id}', '${j.title.replace(/'/g, "\\'")}')">🗑️ Delete</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteJobOpening('${j.job_id}', '${j.title.replace(/'/g, "\\'")}')">Delete</button>
       </div>
     </div>
   `).join("");
@@ -3940,8 +5491,7 @@ async function loadNotifications() {
             ${n.email_attachment_filename ? ` &bull; Attached: <strong>${escapeHtml(n.email_attachment_filename)}</strong>` : ''}
           </div>
           <div style="display:flex; gap:0.4rem; align-items:center;">
-            <button class="btn btn-secondary btn-sm" onclick="viewCandidateDetailsModal('${n.doc_id}')" title="View candidate and contact details" style="padding:0.25rem 0.5rem; font-size:0.95rem; line-height:1;">👁️</button>
-            <button class="btn btn-secondary btn-sm" onclick="openResumePreview('${n.doc_id}')" title="Preview Candidate Resume">Preview</button>
+            <button class="btn btn-secondary btn-sm" onclick="viewCandidateDetailsModal('${n.doc_id}')" title="View candidate and contact details" style="padding:0.3rem 0.55rem; display:inline-flex; align-items:center; justify-content:center;">${SVG_EYE_ICON}</button>
             <button class="btn btn-secondary btn-sm" onclick="downloadCandidateResume('${n.doc_id}')" title="Download Candidate Resume">Download Resume</button>
             <button class="btn btn-secondary btn-sm" onclick="launchImprovementForCandidate('${n.doc_id}')">Improve Resume</button>
             ${!n.is_read ? `<button class="btn btn-secondary btn-sm" onclick="markNotificationAsRead('${n.id}')">Mark Read</button>` : ''}
@@ -4001,7 +5551,7 @@ async function submitEscalationEmail() {
     showToast(`Failed to dispatch email: ${err.message}`, "error");
   } finally {
     btn.disabled = false;
-    btn.textContent = "📧 Send Email with Resume Attached";
+    btn.textContent = "Send Email with Resume Attached";
   }
 }
 
@@ -4082,7 +5632,7 @@ async function openIKMModal() {
 
     if (st.online) {
       if (statusEl) {
-        statusEl.textContent = "Online 🟢";
+        statusEl.textContent = "Online";
         statusEl.style.color = "#10b981";
       }
     } else {
@@ -4266,3 +5816,32 @@ async function runIKMChat() {
   box.scrollTop = box.scrollHeight;
 }
 
+// Global window bindings for resilient inline HTML onclick execution
+window.openResumePreview = openResumePreview;
+window.navigateResumePreview = navigateResumePreview;
+window.changeDocumentPage = changeDocumentPage;
+window.openVersionComparisonModal = openVersionComparisonModal;
+window.viewCandidateDetailsModal = viewCandidateDetailsModal;
+window.viewPIIModal = viewCandidateDetailsModal;
+window.getMatchResultsPreviewList = getMatchResultsPreviewList;
+window.getMatchScopedPreviewList = getMatchScopedPreviewList;
+window.getImproveScopedPreviewList = getImproveScopedPreviewList;
+window.switchImprovementCandidate = switchImprovementCandidate;
+window.downloadCurrentPreviewDocument = downloadCurrentPreviewDocument;
+window.fitCompareDocxPanels = fitCompareDocxPanels;
+window.bulkAcceptAllAndProceed = bulkAcceptAllAndProceed;
+window.bulkAcceptAllAndProceedToDownload = bulkAcceptAllAndProceedToDownload;
+window.bulkAcceptAllAndScrollDown = bulkAcceptAllAndScrollDown;
+window.handleImprovementDownloadClick = handleImprovementDownloadClick;
+window.renderMultiDownloadModal = renderMultiDownloadModal;
+window.downloadSingleAppliedDocx = downloadSingleAppliedDocx;
+window.previewCurrentImprovedResume = previewCurrentImprovedResume;
+window.switchImprovedPreviewIndex = switchImprovedPreviewIndex;
+window.openImprovedResumePreview = openImprovedResumePreview;
+window.onImproveJobSelected = onImproveJobSelected;
+window.AppState = AppState;
+window.getAppliedImprovementsList = getAppliedImprovementsList;
+window.closeModal = closeModal;
+window.downloadCurrentCompareDocument = downloadCurrentCompareDocument;
+window.switchImprovedCompareIndex = switchImprovedCompareIndex;
+window.renderCompareTabsBar = renderCompareTabsBar;

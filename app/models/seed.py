@@ -194,18 +194,32 @@ Requirements:
 ]
 
 def seed_database_if_empty(db: Session):
-    """Populates initial synthetic candidates and sample jobs if empty."""
-    if db.query(Document).count() > 0:
-        return
-
+    """Populates initial synthetic candidates and sample jobs if empty or missing."""
     now = datetime.now(timezone.utc)
+    from app.config import settings
+    from app.integrations.ikm_adapter import ikm_adapter
 
-    # 1. Seed Candidates
+    # 1. Seed Candidates & populate in-memory preview cache
     for c in SAMPLE_CANDIDATES:
         doc_id = c["doc_id"]
-        # Fake file content for DMS
-        file_bytes = f"Resume Content for {c['name']}\nSkills: {', '.join(c['skills'])}\n".encode("utf-8")
-        dms_ref, checksum = dms_adapter.store_original_file(doc_id, c["filename"], file_bytes)
+        # Use actual sample document bytes from sample_data/resumes if available (zero disk persistence in storage)
+        sample_file = settings.BASE_DIR / "sample_data" / "resumes" / c["filename"]
+        if sample_file.exists():
+            file_bytes = sample_file.read_bytes()
+        else:
+            file_bytes = f"Resume Content for {c['name']}\nSkills: {', '.join(c['skills'])}\n".encode("utf-8")
+        
+        dms_ref = f"ikm://{doc_id}"
+        checksum = dms_adapter.calculate_checksum(file_bytes)
+        if hasattr(ikm_adapter, "_download_cache"):
+            ikm_adapter._download_cache[f"ikm-{doc_id}"] = file_bytes
+            ikm_adapter._download_cache[doc_id] = file_bytes
+            ikm_adapter._download_cache[dms_ref] = file_bytes
+            ikm_adapter._download_cache[c["filename"].lower()] = file_bytes
+
+        # If candidate already exists in database, skip adding
+        if db.query(Document).filter(Document.doc_id == doc_id).first():
+            continue
 
         # Encrypt PII
         encrypted_pii = pii_crypto.encrypt_pii_dict({
@@ -285,10 +299,15 @@ def seed_database_if_empty(db: Session):
         db.add(act)
 
         # Graph synchronization
-        neo4j_repository.sync_candidate_profile(doc_id, profile_json, dms_ref)
+        try:
+            neo4j_repository.sync_candidate_profile(doc_id, profile_json, dms_ref)
+        except Exception:
+            pass
 
-    # 2. Seed Jobs
+    # 2. Seed Jobs if missing
     for j in SAMPLE_JOBS:
+        if db.query(JobDescription).filter(JobDescription.job_id == j["job_id"]).first():
+            continue
         job = JobDescription(
             job_id=j["job_id"],
             title=j["title"],
@@ -300,4 +319,8 @@ def seed_database_if_empty(db: Session):
         )
         db.add(job)
 
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise

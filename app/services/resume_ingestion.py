@@ -29,6 +29,9 @@ class ResumeIngestionService:
     def _generate_doc_id(self, db: Session) -> str:
         """Generates a stable, unique, opaque document ID (e.g. DOC-1009)."""
         existing_doc_ids = {row[0] for row in db.query(Document.doc_id).all()}
+        for obj in db.new:
+            if isinstance(obj, Document) and obj.doc_id:
+                existing_doc_ids.add(obj.doc_id)
         
         max_num = 1000
         for d_id in existing_doc_ids:
@@ -67,16 +70,28 @@ class ResumeIngestionService:
                     "error": f"Duplicate file detected. Already registered under {existing_doc.doc_id}."
                 }
 
-            # 3. Generate opaque doc_id and store original in DMS
+            # 3. Generate opaque doc_id
             doc_id = self._generate_doc_id(db)
-            dms_ref, _ = dms_adapter.store_original_file(doc_id, filename, content)
 
-            # 4. Ingest via IKM adapter & extract metadata
-            ikm_res = ikm_adapter.ingest_document(doc_id, dms_ref)
-            ikm_ref = ikm_res.get("ikm_ref", f"ikm-{doc_id}")
+            # 4. Ingest and persist directly into IKM (zero local disk persistence)
+            ikm_res = ikm_adapter.upload_file_bytes(filename=filename, content=content)
+            ikm_doc_id = ikm_res.get("document_id") or doc_id
+            ikm_ref = f"ikm://{ikm_doc_id}"
+            dms_ref = f"ikm://{ikm_doc_id}"
             
-            # Extract metadata (skills, experience, etc.) and isolate PII
-            extracted = ikm_adapter.extract_metadata(doc_id, dms_ref)
+            # Map opaque doc_id to IKM document reference
+            if hasattr(ikm_adapter, "_doc_ikm_mapping"):
+                ikm_adapter._doc_ikm_mapping[doc_id] = ikm_doc_id
+
+            # Trigger background IKM template extraction when remote IKM ID is assigned
+            if hasattr(ikm_adapter, "start_template_extraction") and ikm_doc_id and ikm_doc_id != doc_id:
+                try:
+                    ikm_adapter.start_template_extraction(ikm_doc_id)
+                except Exception:
+                    pass
+
+            # Extract metadata (skills, experience, etc.) and isolate PII directly from memory bytes
+            extracted = ikm_adapter.extract_metadata(doc_id, content, filename=filename, ikm_doc_id=ikm_doc_id)
             pii_data = extracted.get("pii", {})
             profile_data = extracted.get("profile", {})
             raw_text = extracted.get("raw_text", "")

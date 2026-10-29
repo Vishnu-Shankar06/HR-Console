@@ -113,6 +113,7 @@ def test_authentication(
         except Exception as e:
             return {
                 "success": False,
+                "status_code": 504 if "timeout" in str(e).lower() else 500,
                 "message": f"Connection error: {str(e)}"
             }
 
@@ -259,4 +260,32 @@ def get_resume_ikm_template(
         "doc_id": doc_id,
         "ikm_template": template
     }
+
+
+@router.post("/sync")
+def sync_repository_documents(
+    force: bool = Query(True, description="Force fresh synchronization"),
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    """
+    Bidirectionally synchronizes candidate documents with the active IKM repository:
+    - Removes documents from application if deleted in IKM.
+    - Imports documents into application if added to IKM.
+    """
+    from app.services.ikm_sync_service import sync_ikm_with_database
+    return sync_ikm_with_database(db=db, force=force)
+
+
+@router.get("/sync")
+def get_repository_sync_status(
+    force: bool = Query(False, description="Force fresh synchronization"),
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    """
+    Returns current synchronization state and optionally synchronizes.
+    """
+    from app.services.ikm_sync_service import sync_ikm_with_database
+    return sync_ikm_with_database(db=db, force=force)
 

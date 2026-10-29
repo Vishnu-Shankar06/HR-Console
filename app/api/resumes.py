@@ -46,6 +46,13 @@ def list_resumes(
     Search and list authorized candidate resume records with pagination.
     Omit protected PII by default to prevent unauthorized leakage.
     """
+    # Ensure local database reflects live IKM repository status
+    try:
+        from app.services.ikm_sync_service import sync_ikm_with_database
+        sync_ikm_with_database(db=db, force=False)
+    except Exception:
+        pass
+
     q = db.query(Document).options(
         joinedload(Document.profile),
         joinedload(Document.pii),
@@ -80,8 +87,32 @@ def list_resumes(
         profile_dto = None
         if prof and prof.structured_profile_json:
             p_data = prof.structured_profile_json
+            from app.services.experience_calculator import experience_calculator
+            exp_list = p_data.get("experience", [])
+            calc = p_data.get("experience_details")
+            if not calc:
+                if exp_list:
+                    calc = experience_calculator.calculate_total_experience(exp_list)
+                elif prof.raw_text_summary:
+                    calc = experience_calculator.extract_experience_from_text(prof.raw_text_summary)
+            exp_years = p_data.get("experience_years") or (calc.get("total_years") if calc else None)
+            exp_display = p_data.get("experience_display") or (calc.get("display") if calc else None)
+            if not exp_display and exp_years:
+                exp_display = f"{exp_years} yrs"
+            elif not exp_display:
+                exp_display = "Not available"
+
+            ikm_tpl = p_data.get("ikm_template") or {}
+            cb = ikm_tpl.get("contact_block", {}) if isinstance(ikm_tpl, dict) else {}
+            title_val = p_data.get("title") or cb.get("role") or p_data.get("domain") or "Software Engineer"
+            links_val = cb.get("links") or p_data.get("links")
+            loc_val = p_data.get("location") or cb.get("location")
+
             profile_dto = CandidateProfileDTO(
                 doc_id=doc.doc_id,
+                title=title_val,
+                role=title_val,
+                summary=p_data.get("summary") or ikm_tpl.get("summary"),
                 skills=p_data.get("skills", []),
                 qualifications=p_data.get("qualifications", []),
                 experience=p_data.get("experience", []),
@@ -89,7 +120,15 @@ def list_resumes(
                 certifications=p_data.get("certifications", []),
                 profile_status=prof.profile_status,
                 source_document_ref=doc.dms_ref,
-                raw_text_summary=prof.raw_text_summary
+                raw_text_summary=prof.raw_text_summary,
+                experience_years=exp_years,
+                experience_display=exp_display,
+                experience_details=calc,
+                location=loc_val,
+                links=links_val,
+                linkedin=cb.get("linkedin") or p_data.get("linkedin"),
+                github=cb.get("github") or p_data.get("github"),
+                portfolio=cb.get("portfolio") or p_data.get("portfolio")
             )
 
         # Decrypt PII to get candidate's full name and contact information
@@ -104,12 +143,30 @@ def list_resumes(
                 "address_encrypted": pii_rec.address_encrypted
             })
             cand_name = decrypted.get("name")
+            p_data_ref = prof.structured_profile_json if (prof and prof.structured_profile_json) else {}
+            ikm_ref_tpl = p_data_ref.get("ikm_template") or {}
+            cb_ref = ikm_ref_tpl.get("contact_block", {}) if isinstance(ikm_ref_tpl, dict) else {}
             pii_dto = CandidatePIIDTO(
                 doc_id=doc.doc_id,
                 name=cand_name,
+                title=profile_dto.title if profile_dto else (p_data_ref.get("title") or "Software Engineer"),
+                role=profile_dto.role if profile_dto else (p_data_ref.get("role") or "Software Engineer"),
                 email=decrypted.get("email"),
                 phone=decrypted.get("phone"),
-                address=decrypted.get("address")
+                address=decrypted.get("address") or cb_ref.get("location"),
+                location=decrypted.get("address") or cb_ref.get("location"),
+                links=cb_ref.get("links") or p_data_ref.get("links"),
+                linkedin=cb_ref.get("linkedin") or p_data_ref.get("linkedin"),
+                github=cb_ref.get("github") or p_data_ref.get("github"),
+                portfolio=cb_ref.get("portfolio") or p_data_ref.get("portfolio"),
+                filename=doc.original_filename,
+                uploaded_at=doc.uploaded_at.isoformat() if doc.uploaded_at else None,
+                experience_years=profile_dto.experience_years if profile_dto else None,
+                experience_display=profile_dto.experience_display if profile_dto else "Not available",
+                experience_details=profile_dto.experience_details if profile_dto else None,
+                summary=profile_dto.summary if profile_dto else None,
+                skills=profile_dto.skills if profile_dto else [],
+                employment=profile_dto.experience if profile_dto else []
             )
         if not cand_name:
             import re
@@ -163,8 +220,32 @@ def get_resume_detail(
     profile_dto = None
     if prof and prof.structured_profile_json:
         p_data = prof.structured_profile_json
+        from app.services.experience_calculator import experience_calculator
+        exp_list = p_data.get("experience", [])
+        calc = p_data.get("experience_details")
+        if not calc:
+            if exp_list:
+                calc = experience_calculator.calculate_total_experience(exp_list)
+            elif prof.raw_text_summary:
+                calc = experience_calculator.extract_experience_from_text(prof.raw_text_summary)
+        exp_years = p_data.get("experience_years") or (calc.get("total_years") if calc else None)
+        exp_display = p_data.get("experience_display") or (calc.get("display") if calc else None)
+        if not exp_display and exp_years:
+            exp_display = f"{exp_years} yrs"
+        elif not exp_display:
+            exp_display = "Not available"
+
+        ikm_tpl = p_data.get("ikm_template") or {}
+        cb = ikm_tpl.get("contact_block", {}) if isinstance(ikm_tpl, dict) else {}
+        title_val = p_data.get("title") or cb.get("role") or p_data.get("domain") or "Software Engineer"
+        links_val = cb.get("links") or p_data.get("links")
+        loc_val = p_data.get("location") or cb.get("location")
+
         profile_dto = CandidateProfileDTO(
             doc_id=doc.doc_id,
+            title=title_val,
+            role=title_val,
+            summary=p_data.get("summary") or ikm_tpl.get("summary"),
             skills=p_data.get("skills", []),
             qualifications=p_data.get("qualifications", []),
             experience=p_data.get("experience", []),
@@ -172,7 +253,15 @@ def get_resume_detail(
             certifications=p_data.get("certifications", []),
             profile_status=prof.profile_status,
             source_document_ref=doc.dms_ref,
-            raw_text_summary=prof.raw_text_summary
+            raw_text_summary=prof.raw_text_summary,
+            experience_years=exp_years,
+            experience_display=exp_display,
+            experience_details=calc,
+            location=loc_val,
+            links=links_val,
+            linkedin=cb.get("linkedin") or p_data.get("linkedin"),
+            github=cb.get("github") or p_data.get("github"),
+            portfolio=cb.get("portfolio") or p_data.get("portfolio")
         )
 
     cand_name = None
@@ -186,12 +275,30 @@ def get_resume_detail(
             "address_encrypted": pii_rec.address_encrypted
         })
         cand_name = decrypted.get("name")
+        p_data_ref = prof.structured_profile_json if (prof and prof.structured_profile_json) else {}
+        ikm_ref_tpl = p_data_ref.get("ikm_template") or {}
+        cb_ref = ikm_ref_tpl.get("contact_block", {}) if isinstance(ikm_ref_tpl, dict) else {}
         pii_dto = CandidatePIIDTO(
             doc_id=doc.doc_id,
             name=cand_name,
+            title=profile_dto.title if profile_dto else (p_data_ref.get("title") or "Software Engineer"),
+            role=profile_dto.role if profile_dto else (p_data_ref.get("role") or "Software Engineer"),
             email=decrypted.get("email"),
             phone=decrypted.get("phone"),
-            address=decrypted.get("address")
+            address=decrypted.get("address") or cb_ref.get("location"),
+            location=decrypted.get("address") or cb_ref.get("location"),
+            links=cb_ref.get("links") or p_data_ref.get("links"),
+            linkedin=cb_ref.get("linkedin") or p_data_ref.get("linkedin"),
+            github=cb_ref.get("github") or p_data_ref.get("github"),
+            portfolio=cb_ref.get("portfolio") or p_data_ref.get("portfolio"),
+            filename=doc.original_filename,
+            uploaded_at=doc.uploaded_at.isoformat() if doc.uploaded_at else None,
+            experience_years=profile_dto.experience_years if profile_dto else None,
+            experience_display=profile_dto.experience_display if profile_dto else "Not available",
+            experience_details=profile_dto.experience_details if profile_dto else None,
+            summary=profile_dto.summary if profile_dto else None,
+            skills=profile_dto.skills if profile_dto else [],
+            employment=profile_dto.experience if profile_dto else []
         )
     if not cand_name:
         import re
@@ -240,19 +347,53 @@ def get_resume_pii(
     current_user: CurrentUser = Depends(get_current_user)
 ):
     """
-    Retrieves decrypted personal information (Name, Email, Phone, Address).
+    Retrieves decrypted personal information and complete authorized candidate metadata.
     Restricted to authorized roles and logs an audit trail event.
     """
-    pii_record = db.query(CandidatePII).filter(CandidatePII.doc_id == doc_id).first()
-    if not pii_record:
-        raise HTTPException(status_code=404, detail=f"PII record for '{doc_id}' not found.")
+    doc = db.query(Document).filter(Document.doc_id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"Document '{doc_id}' not found.")
 
-    decrypted = pii_crypto.decrypt_pii_dict({
-        "name_encrypted": pii_record.name_encrypted,
-        "email_encrypted": pii_record.email_encrypted,
-        "phone_encrypted": pii_record.phone_encrypted,
-        "address_encrypted": pii_record.address_encrypted
-    })
+    pii_record = db.query(CandidatePII).filter(CandidatePII.doc_id == doc_id).first()
+    decrypted = {}
+    if pii_record:
+        decrypted = pii_crypto.decrypt_pii_dict({
+            "name_encrypted": pii_record.name_encrypted,
+            "email_encrypted": pii_record.email_encrypted,
+            "phone_encrypted": pii_record.phone_encrypted,
+            "address_encrypted": pii_record.address_encrypted
+        })
+
+    prof = db.query(CandidateProfile).filter(CandidateProfile.doc_id == doc_id).first()
+    p_data = prof.structured_profile_json if (prof and prof.structured_profile_json) else {}
+    from app.services.experience_calculator import experience_calculator
+    exp_list = p_data.get("experience", [])
+    calc = p_data.get("experience_details")
+    if not calc:
+        if exp_list:
+            calc = experience_calculator.calculate_total_experience(exp_list)
+        elif prof and prof.raw_text_summary:
+            calc = experience_calculator.extract_experience_from_text(prof.raw_text_summary)
+
+    exp_years = p_data.get("experience_years") or (calc.get("total_years") if calc else None)
+    exp_display = p_data.get("experience_display") or (calc.get("display") if calc else None)
+    if not exp_display and exp_years:
+        exp_display = f"{exp_years} yrs"
+    elif not exp_display:
+        exp_display = "Not available"
+
+    cand_name = decrypted.get("name")
+    if not cand_name:
+        import re
+        clean = re.sub(r'[\-_.]*(?:ATS|Resume|CV|Optimized|Final|\d+|\([0-9]+\))*\.(?:pdf|docx|doc)$', '', doc.original_filename, flags=re.IGNORECASE)
+        clean = re.sub(r'[\-_]+', ' ', clean).strip()
+        cand_name = clean.title() if clean else f"Candidate {doc.doc_id}"
+
+    ikm_tpl = p_data.get("ikm_template") or {}
+    cb = ikm_tpl.get("contact_block", {}) if isinstance(ikm_tpl, dict) else {}
+    title_val = p_data.get("title") or cb.get("role") or p_data.get("domain") or "Software Engineer"
+    links_val = cb.get("links") or p_data.get("links")
+    loc_val = decrypted.get("address") or cb.get("location") or p_data.get("location") or ""
 
     # Record sensitive access audit event
     db.add(AuditEvent(
@@ -267,10 +408,25 @@ def get_resume_pii(
 
     return CandidatePIIDTO(
         doc_id=doc_id,
-        name=decrypted.get("name"),
+        name=cand_name,
+        title=title_val,
+        role=title_val,
         email=decrypted.get("email"),
         phone=decrypted.get("phone"),
-        address=decrypted.get("address")
+        address=loc_val,
+        location=loc_val,
+        links=links_val,
+        linkedin=cb.get("linkedin") or p_data.get("linkedin"),
+        github=cb.get("github") or p_data.get("github"),
+        portfolio=cb.get("portfolio") or p_data.get("portfolio"),
+        filename=doc.original_filename,
+        uploaded_at=doc.uploaded_at.isoformat() if doc.uploaded_at else None,
+        experience_years=exp_years,
+        experience_display=exp_display,
+        experience_details=calc,
+        summary=p_data.get("summary") or ikm_tpl.get("summary"),
+        skills=p_data.get("skills", []),
+        employment=exp_list
     )
 
 @router.get("/{doc_id}/file")
@@ -298,21 +454,29 @@ def get_original_file(
     ))
     db.commit()
 
-    # 1. Primary Remote Storage: Check IKM
+    # 1. Primary Storage: Check IKM
     from app.integrations.ikm_adapter import ikm_adapter
-    if doc.ikm_ref and not doc.ikm_ref.startswith("local-") and not doc.ikm_ref.startswith("ikm-"):
+    ikm_bytes = None
+    if doc.ikm_ref:
         ikm_bytes = ikm_adapter.download_document(doc.ikm_ref)
-        if ikm_bytes:
-            from fastapi.responses import Response
-            import urllib.parse
-            encoded_fn = urllib.parse.quote(doc.original_filename)
-            return Response(
-                content=ikm_bytes,
-                media_type=doc.mime_type or "application/octet-stream",
-                headers={"Content-Disposition": f'attachment; filename="{doc.original_filename}"; filename*=UTF-8\'\'{encoded_fn}'}
-            )
+    if not ikm_bytes and doc.dms_ref and doc.dms_ref.startswith("ikm://"):
+        ikm_bytes = ikm_adapter.download_document(doc.dms_ref[6:])
+    if not ikm_bytes:
+        found = ikm_adapter.find_document_by_name(doc.original_filename)
+        if found and found.get("document_id"):
+            ikm_bytes = ikm_adapter.download_document(found["document_id"])
 
-    # 2. Local DMS fallback
+    if ikm_bytes:
+        from fastapi.responses import Response
+        import urllib.parse
+        encoded_fn = urllib.parse.quote(doc.original_filename)
+        return Response(
+            content=ikm_bytes,
+            media_type=doc.mime_type or "application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="{doc.original_filename}"; filename*=UTF-8\'\'{encoded_fn}'}
+        )
+
+    # 2. Local disk fallback if exists
     file_path = dms_adapter.get_file_path(doc.dms_ref)
     if file_path and file_path.exists():
         return FileResponse(
@@ -321,7 +485,7 @@ def get_original_file(
             filename=doc.original_filename
         )
 
-    raise HTTPException(status_code=404, detail="Original document file not found in IKM or DMS storage.")
+    raise HTTPException(status_code=404, detail="Original document file not found in IKM storage.")
 
 @router.get("/{doc_id}/preview")
 def get_resume_preview(
@@ -349,33 +513,58 @@ def stream_resume_inline(
     if not doc:
         raise HTTPException(status_code=404, detail=f"Document '{doc_id}' not found.")
 
-    # 1. Primary Remote Storage: Check IKM
+    # 1. Primary: Download directly from IKM
     from app.integrations.ikm_adapter import ikm_adapter
-    if doc.ikm_ref and not doc.ikm_ref.startswith("local-") and not doc.ikm_ref.startswith("ikm-"):
-        # Check if preview rendered PDF exists
-        prev_data = ikm_adapter.get_document_preview_data(doc.ikm_ref)
-        if prev_data and prev_data.get("content_bytes_b64"):
-            import base64
-            from fastapi.responses import Response
-            pdf_bytes = base64.b64decode(prev_data["content_bytes_b64"])
-            return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": "inline"})
-        
+    ikm_bytes = None
+    if doc.ikm_ref:
         ikm_bytes = ikm_adapter.download_document(doc.ikm_ref)
-        if ikm_bytes:
-            from fastapi.responses import Response
-            return Response(content=ikm_bytes, media_type=doc.mime_type or "application/octet-stream", headers={"Content-Disposition": "inline"})
+    if not ikm_bytes and doc.dms_ref and doc.dms_ref.startswith("ikm://"):
+        ikm_bytes = ikm_adapter.download_document(doc.dms_ref[6:])
+    if not ikm_bytes:
+        found = ikm_adapter.find_document_by_name(doc.original_filename)
+        if found and found.get("document_id"):
+            ikm_bytes = ikm_adapter.download_document(found["document_id"])
 
-    # 2. Local DMS fallback
+    if ikm_bytes:
+        from fastapi.responses import Response
+        media_type = "application/pdf" if ikm_bytes.startswith(b"%PDF") else ("application/vnd.openxmlformats-officedocument.wordprocessingml.document" if ikm_bytes.startswith(b"PK") else (doc.mime_type or "application/octet-stream"))
+        return Response(content=ikm_bytes, media_type=media_type, headers={"Content-Disposition": "inline"})
+
+    # 2. Local file fallback if exists
     file_path = dms_adapter.get_file_path(doc.dms_ref)
-    if not file_path or not file_path.exists():
-        raise HTTPException(status_code=404, detail="Original document file not found in IKM or DMS storage.")
+    if file_path and file_path.exists() and file_path.stat().st_size > 0:
+        suffix = file_path.suffix.lower()
+        if suffix == ".pdf":
+            media_type = "application/pdf"
+        elif suffix in [".docx", ".doc"]:
+            media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        else:
+            media_type = doc.mime_type or "application/octet-stream"
 
-    headers = {"Content-Disposition": "inline"}
-    return FileResponse(
-        path=file_path,
-        media_type=doc.mime_type or "application/octet-stream",
-        headers=headers
-    )
+        return FileResponse(
+            path=file_path,
+            media_type=media_type,
+            headers={"Content-Disposition": "inline"}
+        )
+
+    # 3. Candidate profile fallback for seeded/in-memory records
+    from app.models.entities import CandidateProfile, CandidatePII
+    prof_rec = db.query(CandidateProfile).filter(CandidateProfile.doc_id == doc_id).first()
+    if prof_rec:
+        raw_text = prof_rec.raw_text_summary or ""
+        cand_name = doc.original_filename.rsplit(".", 1)[0] if doc.original_filename else "Candidate"
+        pii_rec = db.query(CandidatePII).filter(CandidatePII.doc_id == doc_id).first()
+        if pii_rec and pii_rec.name_encrypted:
+            from app.security.encryption import pii_crypto
+            d = pii_crypto.decrypt_pii_dict({"name_encrypted": pii_rec.name_encrypted})
+            if d.get("name"):
+                cand_name = d["name"]
+        skills_str = ", ".join(prof_rec.structured_profile_json.get("skills", [])) if (prof_rec.structured_profile_json and prof_rec.structured_profile_json.get("skills")) else ""
+        content_text = f"{cand_name}\n\n{raw_text}\n\nSkills: {skills_str}".strip()
+        from fastapi.responses import Response
+        return Response(content=content_text.encode("utf-8"), media_type=doc.mime_type or "text/plain", headers={"Content-Disposition": "inline"})
+
+    raise HTTPException(status_code=404, detail="Original document file not found in storage.")
 
 @router.delete("/{doc_id}")
 def delete_resume(
@@ -385,7 +574,7 @@ def delete_resume(
 ):
     """
     Deletes a candidate resume record and its associated data (PII, profile, revisions, actions).
-    Also cleans up files from the DMS.
+    Cleans up files from IKM and DMS.
     """
     doc = db.query(Document).filter(Document.doc_id == doc_id).first()
     if not doc:
@@ -395,13 +584,30 @@ def delete_resume(
     db.query(MatchResult).filter(MatchResult.doc_id == doc_id).delete()
     # Delete recruitment actions
     db.query(RecruitmentAction).filter(RecruitmentAction.doc_id == doc_id).delete()
-    # Delete resume versions
+
+    # Delete versions from IKM and DB
+    from app.integrations.ikm_adapter import ikm_adapter
+    versions = db.query(ResumeVersion).filter(ResumeVersion.doc_id == doc_id).all()
+    for v in versions:
+        if v.dms_ref and v.dms_ref.startswith("ikm://"):
+            ikm_adapter.delete_document(v.dms_ref[6:], filename=f"{doc_id}_{v.version_id}")
+        elif v.dms_ref:
+            ikm_adapter.delete_document(v.dms_ref, filename=f"{doc_id}_{v.version_id}")
     db.query(ResumeVersion).filter(ResumeVersion.doc_id == doc_id).delete()
+
     # Delete profile and PII
     db.query(CandidateProfile).filter(CandidateProfile.doc_id == doc_id).delete()
     db.query(CandidatePII).filter(CandidatePII.doc_id == doc_id).delete()
     # Delete notifications
     db.query(Notification).filter(Notification.doc_id == doc_id).delete()
+
+    # Delete original document from IKM
+    if doc.ikm_ref:
+        ikm_adapter.delete_document(doc.ikm_ref, filename=doc.original_filename)
+    if doc.dms_ref and doc.dms_ref.startswith("ikm://"):
+        ikm_adapter.delete_document(doc.dms_ref[6:], filename=doc.original_filename)
+    # Also delete by doc_id to clean up any legacy entries
+    ikm_adapter.delete_document(doc.doc_id, filename=doc.original_filename)
 
     # Remove physical original file if exists
     file_path = dms_adapter.get_file_path(doc.dms_ref)
@@ -426,6 +632,12 @@ def delete_resume(
 
     db.commit()
 
+    try:
+        from app.services.ikm_sync_service import invalidate_sync_cooldown
+        invalidate_sync_cooldown()
+    except Exception:
+        pass
+
     return {"success": True, "message": f"Resume '{doc_id}' deleted successfully."}
 
 @router.post("/bulk-delete", response_model=BulkDeleteResponse)
@@ -435,7 +647,7 @@ def bulk_delete_resumes(
     current_user: CurrentUser = Depends(get_current_user)
 ):
     """
-    Deletes multiple candidate resume records and associated DMS files atomically per record.
+    Deletes multiple candidate resume records and associated files from IKM atomically per record.
     Tracks successes, partial failures, and audit logging.
     """
     if not payload.doc_ids:
@@ -458,13 +670,29 @@ def bulk_delete_resumes(
             db.query(MatchResult).filter(MatchResult.doc_id == doc_id).delete()
             # Delete recruitment actions
             db.query(RecruitmentAction).filter(RecruitmentAction.doc_id == doc_id).delete()
-            # Delete resume versions
+            
+            # Delete versions from IKM and DB
+            from app.integrations.ikm_adapter import ikm_adapter
+            versions = db.query(ResumeVersion).filter(ResumeVersion.doc_id == doc_id).all()
+            for v in versions:
+                if v.dms_ref and v.dms_ref.startswith("ikm://"):
+                    ikm_adapter.delete_document(v.dms_ref[6:], filename=f"{doc_id}_{v.version_id}")
+                elif v.dms_ref:
+                    ikm_adapter.delete_document(v.dms_ref, filename=f"{doc_id}_{v.version_id}")
             db.query(ResumeVersion).filter(ResumeVersion.doc_id == doc_id).delete()
+
             # Delete profile and PII
             db.query(CandidateProfile).filter(CandidateProfile.doc_id == doc_id).delete()
             db.query(CandidatePII).filter(CandidatePII.doc_id == doc_id).delete()
             # Delete notifications
             db.query(Notification).filter(Notification.doc_id == doc_id).delete()
+
+            # Delete original document from IKM
+            if doc.ikm_ref:
+                ikm_adapter.delete_document(doc.ikm_ref, filename=doc.original_filename)
+            if doc.dms_ref and doc.dms_ref.startswith("ikm://"):
+                ikm_adapter.delete_document(doc.dms_ref[6:], filename=doc.original_filename)
+            ikm_adapter.delete_document(doc.doc_id, filename=doc.original_filename)
 
             # Remove physical original file if exists
             file_path = dms_adapter.get_file_path(doc.dms_ref)
@@ -492,6 +720,12 @@ def bulk_delete_resumes(
         except Exception as e:
             db.rollback()
             failed_ids.append({"doc_id": doc_id, "reason": str(e)})
+
+    try:
+        from app.services.ikm_sync_service import invalidate_sync_cooldown
+        invalidate_sync_cooldown()
+    except Exception:
+        pass
 
     total_deleted = len(deleted_ids)
     is_success = total_deleted > 0 or len(failed_ids) == 0

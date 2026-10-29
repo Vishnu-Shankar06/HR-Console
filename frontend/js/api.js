@@ -165,6 +165,52 @@ const API = {
     });
   },
 
+  saveDraft(docId, changeSummary, revisedContent, personalDetails = null, approvedChanges = null) {
+    const payload = {
+      change_summary: changeSummary,
+      revised_content: revisedContent
+    };
+    if (personalDetails) {
+      if (personalDetails.name) payload.candidate_name = personalDetails.name;
+      if (personalDetails.role) payload.candidate_role = personalDetails.role;
+      if (personalDetails.phone) payload.candidate_phone = personalDetails.phone;
+      if (personalDetails.email) payload.candidate_email = personalDetails.email;
+      if (personalDetails.location) payload.candidate_location = personalDetails.location;
+      if (personalDetails.links) payload.candidate_links = personalDetails.links;
+    }
+    if (approvedChanges) {
+      payload.approved_changes = approvedChanges;
+    }
+    return this.request(`/api/resumes/${encodeURIComponent(docId)}/save-draft`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  },
+
+  saveEditorDocx(docId, blob, changeSummary = null) {
+    const formData = new FormData();
+    formData.append("file", blob, `${docId}_edited.docx`);
+    const q = changeSummary ? `?change_summary=${encodeURIComponent(changeSummary)}` : "";
+    return this.request(`/api/resumes/${encodeURIComponent(docId)}/save-editor-docx${q}`, {
+      method: "POST",
+      body: formData
+    });
+  },
+
+  saveEditorToLibrary(docId, blob = null, changeSummary = null) {
+    const formData = new FormData();
+    if (blob) {
+      formData.append("file", blob, `${docId}_library.docx`);
+    }
+    if (changeSummary) {
+      formData.append("change_summary", changeSummary);
+    }
+    return this.request(`/api/resumes/${encodeURIComponent(docId)}/save-to-library`, {
+      method: "POST",
+      body: formData
+    });
+  },
+
   recalculateScore(docId, acceptedChanges, jobId = null, jobText = null) {
     return this.request(`/api/resumes/${encodeURIComponent(docId)}/recalculate-score`, {
       method: "POST",
@@ -295,6 +341,12 @@ const API = {
     });
   },
 
+  openFolder(docId) {
+    return this.request(`/api/resumes/${encodeURIComponent(docId)}/open-folder`, {
+      method: "POST"
+    });
+  },
+
   // IKM / RAG Builder Operations
   getIKMStatus() {
     return this.request("/api/ikm/status");
@@ -343,6 +395,12 @@ const API = {
         fields,
         reason
       })
+    });
+  },
+
+  syncIKM(force = true) {
+    return this.request(`/api/ikm/sync?force=${force}`, {
+      method: "POST"
     });
   }
 };

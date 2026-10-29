@@ -23,12 +23,13 @@ from app.integrations.ikm_adapter import ikm_adapter
 async def lifespan(app: FastAPI):
     # Initialize database tables
     Base.metadata.create_all(bind=engine)
-    # Seed initial test data
-    db = SessionLocal()
-    try:
-        seed_database_if_empty(db)
-    finally:
-        db.close()
+    # Seed initial test data only when explicitly enabled (e.g., test environments)
+    if getattr(settings, "SEED_SAMPLE_DATA", False):
+        db = SessionLocal()
+        try:
+            seed_database_if_empty(db)
+        finally:
+            db.close()
     yield
 
 app = FastAPI(

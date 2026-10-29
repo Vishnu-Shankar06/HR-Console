@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>WordCraft</title>
+  <link rel="icon" href="./wordcraft-fa59e09a3f921e03.ico" integrity="sha384-99DzWb82rFgkdw7hjKziyDQaHbMTklb9MWeLKF7LcVUnq80H4nDrc/pjHJtAj/AA"/>
+  
+<script type="module">
+// Intercept URL.createObjectURL and anchor click to capture exported DOCX blobs
+window._lastExportedDocxBlob = null;
+window._lastExportedFilename = "";
+window._blobUrlMap = new Map();
+
+const origCreateObjectURL = URL.createObjectURL;
+URL.createObjectURL = function(obj) {
+  const url = origCreateObjectURL.apply(this, arguments);
+  if (obj instanceof Blob) {
+    window._lastExportedDocxBlob = obj;
+    window._blobUrlMap.set(url, obj);
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({
+          type: "WORDCRAFT_BLOB_EXPORTED",
+          size: obj.size
+        }, "*");
+      }
+    } catch (e) {}
+  }
+  return url;
+};
+
+const origRevokeObjectURL = URL.revokeObjectURL;
+URL.revokeObjectURL = function(url) {
+  setTimeout(() => {
+    window._blobUrlMap.delete(url);
+    try { origRevokeObjectURL.apply(this, [url]); } catch (e) {}
+  }, 15000);
+};
+
+const origAnchorClick = HTMLAnchorElement.prototype.click;
+HTMLAnchorElement.prototype.click = function() {
+  if (this.download && this.href) {
+    window._lastExportedFilename = this.download;
+    const blob = window._blobUrlMap.get(this.href);
+    if (blob) {
+      window._lastExportedDocxBlob = blob;
+      try {
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage({
+            type: "WORDCRAFT_DOCUMENT_SAVED",
+            filename: this.download,
+            size: blob.size
+          }, "*");
+        }
+      } catch (e) {}
+    }
+  }
+  return origAnchorClick.apply(this, arguments);
+};
+
+import init, * as bindings from './wordcraft-web-8edbd1aaf3363941.js';
+const wasm = await init({ module_or_path: './wordcraft-web-8edbd1aaf3363941_bg.wasm' });
+
+window.wasmBindings = bindings;
+dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
+
+// Auto-load candidate document if passed via query params or postMessage
+async function loadDocumentFromUrl(docUrl, filename) {
+  const loadingEl = document.getElementById("wordcraft_loading");
+  if (loadingEl) {
+    loadingEl.style.display = "flex";
+    loadingEl.textContent = `Loading ${filename || 'candidate resume'} into WordCraft...`;
+  }
+  try {
+    const resp = await fetch(docUrl);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const blob = await resp.blob();
+    // Keep initial loaded blob as baseline
+    if (!window._lastExportedDocxBlob) {
+      window._lastExportedDocxBlob = blob;
+      window._lastExportedFilename = filename || "resume.docx";
+    }
+    const file = new File([blob], filename || "resume.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    });
+    
+    // Wait for eframe canvas listeners to be active
+    await new Promise(r => setTimeout(r, 1200));
+
+    const canvas = document.getElementById("wordcraft_canvas");
+    if (canvas && window.DataTransfer) {
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      const dropEvt = new DragEvent("drop", {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer: dt
+      });
+      canvas.dispatchEvent(dropEvt);
+    }
+    if (loadingEl) loadingEl.style.display = "none";
+  } catch (err) {
+    console.warn("Could not auto-load document into canvas:", err);
+    if (loadingEl) loadingEl.style.display = "none";
+  }
+}
+
+const params = new URLSearchParams(window.location.search);
+const docUrl = params.get("doc_url");
+const filename = params.get("filename") || "candidate_resume.docx";
+if (docUrl) {
+  setTimeout(() => loadDocumentFromUrl(docUrl, filename), 800);
+}
+
+window.addEventListener("message", (e) => {
+  if (!e.data) return;
+  if (e.data.type === "LOAD_DOCX" && e.data.url) {
+    loadDocumentFromUrl(e.data.url, e.data.filename);
+  } else if (e.data.type === "TRIGGER_SAVE") {
+    // Send Ctrl+S to canvas
+    const canvas = document.getElementById("wordcraft_canvas");
+    if (canvas) {
+      canvas.focus();
+      const kDown = new KeyboardEvent("keydown", {
+        key: "s",
+        code: "KeyS",
+        keyCode: 83,
+        which: 83,
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true
+      });
+      canvas.dispatchEvent(kDown);
+      const kUp = new KeyboardEvent("keyup", {
+        key: "s",
+        code: "KeyS",
+        keyCode: 83,
+        which: 83,
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true
+      });
+      canvas.dispatchEvent(kUp);
+    }
+  }
+});
+</script>
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #e6e6e6; }
+    #wordcraft_canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    #wordcraft_loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      color: #555; font: 14px system-ui, sans-serif; pointer-events: none; background: rgba(230,230,230,0.6); z-index: 10; }
+  </style>
+<link rel="modulepreload" href="./wordcraft-web-8edbd1aaf3363941.js" crossorigin="anonymous" integrity="sha384-B9Ov562A87jZoJ9s/g1GtowfyoKelRFevpJikJPbQ6GuKM5VHCop1puyCEcYyP8b"><link rel="preload" href="./wordcraft-web-8edbd1aaf3363941_bg.wasm" crossorigin="anonymous" integrity="sha384-QUN1odfzYDrlUau1bk2+6U/D19w+WrKOJ/ckaV/DrRTp6zog1KXCGXV5DZKnJJF3" as="fetch" type="application/wasm"></head>
+<body>
+  <canvas id="wordcraft_canvas"></canvas>
+  <div id="wordcraft_loading">Loading WordCraft&hellip;</div>
+</body>
+</html>

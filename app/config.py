@@ -13,17 +13,7 @@ try:
 except ImportError:
     pass
 
-# Storage directories
-STORAGE_DIR = BASE_DIR / "storage"
-DMS_DIR = STORAGE_DIR / "dms"
-DMS_ORIGINALS_DIR = DMS_DIR / "originals"
-DMS_VERSIONS_DIR = DMS_DIR / "versions"
-DB_DIR = STORAGE_DIR / "db"
-
-# Ensure directories exist
-DMS_ORIGINALS_DIR.mkdir(parents=True, exist_ok=True)
-DMS_VERSIONS_DIR.mkdir(parents=True, exist_ok=True)
-DB_DIR.mkdir(parents=True, exist_ok=True)
+# Persistent storage is provided exclusively by IKM RAG Builder with zero local disk persistence.
 
 class Settings:
     BASE_DIR: Path = BASE_DIR
@@ -32,8 +22,8 @@ class Settings:
     DEBUG: bool = os.getenv("DEBUG", "true").lower() in ("true", "1")
     PORT: int = int(os.getenv("PORT", "8000"))
     
-    # Database
-    DATABASE_URL: str = os.getenv("DATABASE_URL", f"sqlite:///{DB_DIR / 'recruitment.db'}")
+    # Database (Defaults to local recruitment.db if PostgreSQL DATABASE_URL is not set)
+    DATABASE_URL: str = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR / 'recruitment.db'}")
     
     # Cryptography / Field Encryption Key
     # In dev, auto-generate a stable key if not set
@@ -51,6 +41,7 @@ class Settings:
     DEFAULT_INACTIVITY_THRESHOLD_DAYS: int = int(os.getenv("DEFAULT_INACTIVITY_THRESHOLD_DAYS", "7"))
     MAX_UPLOAD_SIZE_MB: int = int(os.getenv("MAX_UPLOAD_SIZE_MB", "15"))
     ALLOWED_EXTENSIONS: set = {"pdf", "docx", "doc", "txt"}
+    SEED_SAMPLE_DATA: bool = os.getenv("SEED_SAMPLE_DATA", "false").lower() in ("true", "1")
     
     # IKM / RAG Builder Config
     IKM_ENABLED: bool = os.getenv("IKM_ENABLED", "true").lower() in ("true", "1")
@@ -61,8 +52,8 @@ class Settings:
     IKM_USERNAME: str = RAG_BUILDER_USERNAME
     IKM_PASSWORD: str = RAG_BUILDER_PASSWORD
     IKM_API_KEY: str = os.getenv("IKM_API_KEY", "")
-    IKM_REPOSITORY_ID: str = os.getenv("IKM_REPOSITORY_ID", "")
-    IKM_TIMEOUT_SECONDS: float = float(os.getenv("IKM_TIMEOUT_SECONDS", "12.0"))
+    IKM_REPOSITORY_ID: str = os.getenv("IKM_REPOSITORY_ID", "1e8d9fd6-d195-4026-8ede-66363f902a3b")
+    IKM_TIMEOUT_SECONDS: float = float(os.getenv("IKM_TIMEOUT_SECONDS", "3.5"))
     
     # Neo4j Config
     NEO4J_ENABLED: bool = os.getenv("NEO4J_ENABLED", "false").lower() in ("true", "1")
@@ -90,7 +81,7 @@ class Settings:
     if _env_model and not ("grok" in _env_model.lower() and "groq.com" in GROK_BASE_URL):
         GROK_MODEL: str = _env_model
     elif "groq.com" in GROK_BASE_URL:
-        GROK_MODEL: str = "qwen/qwen3.8-27b"
+        GROK_MODEL: str = "openai/gpt-oss-120b"
     elif "openai.com" in GROK_BASE_URL:
         GROK_MODEL: str = "gpt-4o"
     else:

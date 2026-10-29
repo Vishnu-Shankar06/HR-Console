@@ -20,12 +20,30 @@ class MultiUploadResponse(BaseModel):
 class CandidatePIIDTO(BaseModel):
     doc_id: str
     name: Optional[str] = None
+    title: Optional[str] = None
+    role: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
     address: Optional[str] = None
+    location: Optional[str] = None
+    links: Optional[str] = None
+    linkedin: Optional[str] = None
+    github: Optional[str] = None
+    portfolio: Optional[str] = None
+    filename: Optional[str] = None
+    uploaded_at: Optional[str] = None
+    experience_years: Optional[float] = None
+    experience_display: Optional[str] = None
+    experience_details: Optional[Dict[str, Any]] = None
+    summary: Optional[str] = None
+    skills: List[str] = []
+    employment: List[Dict[str, Any]] = []
 
 class CandidateProfileDTO(BaseModel):
     doc_id: str
+    title: Optional[str] = None
+    role: Optional[str] = None
+    summary: Optional[str] = None
     skills: List[str] = []
     qualifications: List[Dict[str, Any]] = []
     experience: List[Dict[str, Any]] = []
@@ -34,6 +52,14 @@ class CandidateProfileDTO(BaseModel):
     profile_status: str
     source_document_ref: str
     raw_text_summary: Optional[str] = None
+    experience_years: Optional[float] = None
+    experience_display: Optional[str] = None
+    experience_details: Optional[Dict[str, Any]] = None
+    location: Optional[str] = None
+    links: Optional[str] = None
+    linkedin: Optional[str] = None
+    github: Optional[str] = None
+    portfolio: Optional[str] = None
 
 class DocumentDetailResponse(BaseModel):
     doc_id: str
@@ -124,7 +150,7 @@ class SupportingEvidenceItem(BaseModel):
 class ResumeChangeItem(BaseModel):
     id: Optional[str] = None
     section: str = "general"
-    target_element_id: str
+    target_element_id: Optional[str] = None
     original_text: str = ""
     proposed_text: str
     reason: str = ""
@@ -187,6 +213,8 @@ class ImprovementResponse(BaseModel):
     llm_model: Optional[str] = None
     changes: Optional[List[ResumeChangeItem]] = None
     gaps: Optional[List[ResumeGapItem]] = None
+    candidate_name: Optional[str] = None
+    candidate_personal_details: Optional[Dict[str, Any]] = None
     ikm_evidence_status: Optional[str] = None
     document_type: Optional[str] = None
 
@@ -200,6 +228,7 @@ class SaveVersionRequest(BaseModel):
     candidate_email: Optional[str] = None
     candidate_location: Optional[str] = None
     candidate_links: Optional[str] = None
+    approved_changes: Optional[List[Dict[str, Any]]] = None
 
 class ResumeVersionResponse(BaseModel):
     version_id: str
@@ -210,6 +239,10 @@ class ResumeVersionResponse(BaseModel):
     approved_by: Optional[str] = None
     change_summary: str
     dms_ref: str
+    actual_score: Optional[int] = None
+    score_breakdown: Optional[Dict[str, Any]] = None
+    score_delta: Optional[int] = None
+    score_explanation: Optional[str] = None
 
 # --- Follow-Up & Workflow Schemas ---
 
@@ -279,6 +312,7 @@ class DashboardSummaryResponse(BaseModel):
     active_jobs: int
     top_skills_distribution: Dict[str, int]
     recent_activity: List[Dict[str, Any]]
+    followup_status_distribution: Optional[Dict[str, int]] = None
 
 # --- Bulk Delete Schemas ---
 

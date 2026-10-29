@@ -33,6 +33,17 @@ def db_session(engine):
 
 @pytest.fixture(scope="function")
 def client(db_session):
+    from app.services.resume_preview_service import resume_preview_service
+    from app.integrations.ikm_adapter import ikm_adapter
+    resume_preview_service.invalidate_cache()
+    if hasattr(ikm_adapter, "invalidate_cache"):
+        ikm_adapter.invalidate_cache()
+    if hasattr(ikm_adapter, "_download_cache"):
+        ikm_adapter._download_cache.clear()
+    # Re-seed cache with genuine sample resume bytes
+    from app.models.seed import seed_database_if_empty
+    seed_database_if_empty(db_session)
+
     def override_get_db():
         try:
             yield db_session
@@ -43,3 +54,6 @@ def client(db_session):
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+    resume_preview_service.invalidate_cache()
+    if hasattr(ikm_adapter, "invalidate_cache"):
+        ikm_adapter.invalidate_cache()

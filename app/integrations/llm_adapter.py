@@ -143,67 +143,6 @@ class LLMAdapter:
                 return f"Evidenced in experience as '{exp.get('role')}': {exp.get('evidence')}"
         return f"Verified technical skill in candidate record: {keyword}"
 
-    def generate_resume_improvements(
-        self,
-        jd_reqs: Dict[str, Any],
-        profile: Dict[str, Any],
-        original_text: str
-    ) -> Dict[str, Any]:
-        """
-        Generates concrete, evidence-grounded improvement suggestions.
-        Marks rewrites requiring recruiter/candidate confirmation.
-        """
-        analysis = self.explain_candidate_match(jd_reqs, profile)
-        matched = analysis["matched_requirements"]
-        gaps = analysis["gaps"]
-
-        suggested_rewrites = []
-        formatting_issues = []
-
-        # 1. Project rewrite suggestion
-        projects = profile.get("projects", [])
-        if projects:
-            p = projects[0]
-            missing_skills = [g["requirement"] for g in gaps[:2]]
-            missing_str = ", ".join(missing_skills) if missing_skills else "automated testing and deployment"
-            suggested_rewrites.append({
-                "section": "Projects & Practical Experience",
-                "current_evidence": f"{p.get('name')}: {p.get('evidence')}",
-                "suggested_text": (
-                    f"Engineered '{p.get('name')}' using {', '.join(profile.get('skills', [])[:3])}; "
-                    f"integrated robust RESTful endpoints with error handling. "
-                    f"[Recruiter/Candidate confirmation needed: add verified details on {missing_str} if utilized]."
-                ),
-                "requires_user_confirmation": True,
-                "rationale": "Clarifies architectural scope and directly aligns terminology with target JD without inventing unverified claims."
-            })
-
-        # 2. Skills organization suggestion
-        if len(profile.get("skills", [])) > 0:
-            suggested_rewrites.append({
-                "section": "Technical Skills Classification",
-                "current_evidence": ", ".join(profile.get("skills", [])),
-                "suggested_text": (
-                    f"Languages & Frameworks: {', '.join([s for s in profile.get('skills', []) if s in ['Python', 'FastAPI', 'Django', 'Flask', 'React', 'TypeScript']])}\n"
-                    f"Databases & Cloud: {', '.join([s for s in profile.get('skills', []) if s in ['PostgreSQL', 'MySQL', 'MongoDB', 'Redis', 'Docker', 'AWS']])}"
-                ),
-                "requires_user_confirmation": False,
-                "rationale": "Groups skills logically to increase readability and structured recognition for hiring managers."
-            })
-
-        # 3. Formatting check
-        if len(original_text.split("\n")) < 15:
-            formatting_issues.append({
-                "type": "conciseness",
-                "detail": "Document appears brief. Consider expanding project bullets with specific responsibilities."
-            })
-
-        return {
-            "matched_requirements": matched,
-            "gaps": gaps,
-            "suggested_rewrites": suggested_rewrites,
-            "formatting_issues": formatting_issues
-        }
 
     def generate_candidate_development_plan(
         self,

@@ -1,8 +1,0 @@
-Job Title: Senior Python Backend Developer
-Location: Remote
-Requirements:
-- Python proficiency with FastAPI or Django
-- PostgreSQL database experience and query optimization
-- REST API design and microservices
-- Docker containerization and PyTest test suites
-- 2+ years backend engineering experience

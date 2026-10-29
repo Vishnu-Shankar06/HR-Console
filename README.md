@@ -1,5 +1,5 @@
 <<<<<<< HEAD
-# TalentPulse AI — AI Recruitment & Resume Intelligence Platform
+# HR Console — AI Recruitment & Resume Intelligence Platform
 
 > An all-in-one AI recruitment management platform built for non-technical recruiters. Designed with modular architecture that decouples company Intelligent Knowledge Management (IKM) and Document Management System (DMS) interfaces while orchestrating candidate matching, evidence-grounded resume improvement, and candidate follow-up workflows.
 

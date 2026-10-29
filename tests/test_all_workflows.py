@@ -712,3 +712,26 @@ def test_bulk_delete_resumes(client):
     # Verify doc_id_2 was deleted
     verify_resp_2 = client.get(f"/api/resumes/{doc_id_2}")
     assert verify_resp_2.status_code == 404
+
+
+def test_dashboard_summary_with_activity_and_followup_distribution(client):
+    """
+    Verifies that GET /api/dashboard/summary returns the follow-up status distribution
+    and recent activity items with candidate names for UI rendering.
+    """
+    resp = client.get("/api/dashboard/summary")
+    assert resp.status_code == 200
+    data = resp.json()
+
+    assert "total_resumes" in data
+    assert "awaiting_review" in data
+    assert "follow_ups_due" in data
+    assert "followup_status_distribution" in data
+    assert isinstance(data["followup_status_distribution"], dict)
+    assert "recent_activity" in data
+    assert isinstance(data["recent_activity"], list)
+    if data["recent_activity"]:
+        first = data["recent_activity"][0]
+        assert "action_type" in first
+        assert "candidate_name" in first
+

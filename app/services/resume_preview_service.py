@@ -45,6 +45,42 @@ class ResumePreviewService:
             return ' '.join(clean_words).title()
         return clean.title() if clean else f"Candidate {doc_id}"
 
+    def _unmask_preview_pages(self, pages: List[str], doc_id: str, db: Session) -> List[str]:
+        """Restores genuine candidate PII so masked tokens never leak into authorized user previews."""
+        if not pages or not doc_id:
+            return pages
+        pii_rec = db.query(CandidatePII).filter(CandidatePII.doc_id == doc_id).first()
+        if not pii_rec:
+            return pages
+        from app.security.encryption import pii_crypto
+        decrypted = pii_crypto.decrypt_pii_dict({
+            "name_encrypted": pii_rec.name_encrypted,
+            "email_encrypted": pii_rec.email_encrypted,
+            "phone_encrypted": pii_rec.phone_encrypted,
+            "address_encrypted": pii_rec.address_encrypted
+        })
+        real_name = decrypted.get("name")
+        real_phone = decrypted.get("phone")
+        real_email = decrypted.get("email")
+        real_addr = decrypted.get("address")
+
+        unmasked = []
+        for page in pages:
+            p_mod = page
+            if real_phone:
+                p_mod = p_mod.replace("+XXX-XXX-XXXX", real_phone)
+                p_mod = p_mod.replace("[CANDIDATE_PHONE]", real_phone)
+            if real_email:
+                p_mod = re.sub(r'[\w\.-]+\*{3}@[\w\.-]+', real_email, p_mod)
+                p_mod = p_mod.replace("[CANDIDATE_EMAIL]", real_email)
+            if real_name:
+                p_mod = p_mod.replace("[CANDIDATE_NAME]", real_name)
+                p_mod = p_mod.replace("PERSON_NAME", real_name)
+            if real_addr:
+                p_mod = p_mod.replace("[CANDIDATE_LOCATION]", real_addr)
+            unmasked.append(p_mod)
+        return unmasked
+
     def get_document_preview(self, doc_id: str, db: Session) -> Dict[str, Any]:
         doc = db.query(Document).filter(Document.doc_id == doc_id).first()
         if not doc:
@@ -57,118 +93,221 @@ class ResumePreviewService:
 
         cand_name = self.resolve_candidate_full_name(doc_id, doc.original_filename, db)
 
-        # 1. Primary: If registered in remote IKM, query actual rendered preview
+        # 1. Primary: Download directly from IKM storage
         from app.integrations.ikm_adapter import ikm_adapter
-        if doc.ikm_ref and not doc.ikm_ref.startswith("local-") and not doc.ikm_ref.startswith("ikm-"):
-            prev_data = ikm_adapter.get_document_preview_data(doc.ikm_ref)
-            if prev_data and prev_data.get("content_bytes_b64"):
+        file_bytes = None
+        if hasattr(ikm_adapter, "_download_cache"):
+            if doc.ikm_ref and doc.ikm_ref in ikm_adapter._download_cache:
+                file_bytes = ikm_adapter._download_cache[doc.ikm_ref]
+            elif doc_id in ikm_adapter._download_cache:
+                file_bytes = ikm_adapter._download_cache[doc_id]
+            elif doc.dms_ref and doc.dms_ref in ikm_adapter._download_cache:
+                file_bytes = ikm_adapter._download_cache[doc.dms_ref]
+
+        if not file_bytes and doc.ikm_ref:
+            file_bytes = ikm_adapter.download_document(doc.ikm_ref)
+        if not file_bytes and doc.dms_ref and doc.dms_ref.startswith("ikm://"):
+            file_bytes = ikm_adapter.download_document(doc.dms_ref[6:])
+        if not file_bytes:
+            found = ikm_adapter.find_document_by_name(doc.original_filename)
+            if found and found.get("document_id"):
+                file_bytes = ikm_adapter.download_document(found["document_id"])
+
+        if file_bytes:
+            if file_bytes.startswith(b"%PDF"):
+                pages = []
                 try:
-                    import base64, io, pypdf
-                    pdf_bytes = base64.b64decode(prev_data["content_bytes_b64"])
-                    reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
-                    pages = []
+                    import io, pypdf
+                    reader = pypdf.PdfReader(io.BytesIO(file_bytes))
                     for idx, p in enumerate(reader.pages):
                         p_text = p.extract_text() or ""
                         pages.append(self._format_pdf_page_html(p_text, idx + 1, cand_name))
-                    if not pages:
-                        pages = [f"<div class='doc-preview-empty'><p>Document content available in IKM.</p></div>"]
-                    rendered = {
-                        "success": True,
-                        "doc_id": doc_id,
-                        "version_id": None,
-                        "filename": doc.original_filename,
-                        "full_name": cand_name,
-                        "mime_type": "application/pdf",
-                        "total_pages": len(pages),
-                        "pages": pages,
-                        "is_pdf": True,
-                        "pdf_stream_url": f"/api/resumes/{doc_id}/stream"
-                    }
-                    self._preview_cache[cache_key] = (0.0, len(pdf_bytes), rendered)
-                    return rendered
                 except Exception:
                     pass
+                if not pages:
+                    text = ikm_adapter.extract_raw_text(file_bytes, filename=doc.original_filename)
+                    pages = self._text_to_pages(text, cand_name)
+                pages = self._unmask_preview_pages(pages, doc_id, db)
+                return {
+                    "success": True,
+                    "doc_id": doc_id,
+                    "version_id": None,
+                    "filename": doc.original_filename,
+                    "full_name": cand_name,
+                    "mime_type": "application/pdf",
+                    "total_pages": max(1, len(pages)),
+                    "pages": pages,
+                    "is_pdf": True,
+                    "is_docx": False,
+                    "stream_url": f"/api/resumes/{doc_id}/stream",
+                    "pdf_stream_url": f"/api/resumes/{doc_id}/stream"
+                }
+            elif file_bytes.startswith(b"PK\x03\x04") or doc.original_filename.lower().endswith(".docx"):
+                pages = []
+                try:
+                    pages = self._docx_to_pages(file_bytes, cand_name)
+                except Exception:
+                    text = ikm_adapter.extract_raw_text(file_bytes, filename=doc.original_filename)
+                    pages = self._text_to_pages(text, cand_name)
+                pages = self._unmask_preview_pages(pages, doc_id, db)
+                return {
+                    "success": True,
+                    "doc_id": doc_id,
+                    "version_id": None,
+                    "filename": doc.original_filename,
+                    "full_name": cand_name,
+                    "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    "total_pages": max(1, len(pages)),
+                    "pages": pages,
+                    "is_pdf": False,
+                    "is_docx": True,
+                    "stream_url": f"/api/resumes/{doc_id}/stream",
+                    "docx_stream_url": f"/api/resumes/{doc_id}/stream"
+                }
+            else:
+                text = file_bytes.decode("utf-8", errors="ignore")
+                pages = self._text_to_pages(text, cand_name)
+                pages = self._unmask_preview_pages(pages, doc_id, db)
+                return {
+                    "success": True,
+                    "doc_id": doc_id,
+                    "version_id": None,
+                    "filename": doc.original_filename,
+                    "full_name": cand_name,
+                    "mime_type": "text/plain",
+                    "total_pages": max(1, len(pages)),
+                    "pages": pages,
+                    "is_pdf": False,
+                    "is_docx": False,
+                    "stream_url": f"/api/resumes/{doc_id}/stream",
+                    "docx_stream_url": None
+                }
 
-        # 2. Local File or IKM download recovery
+        # 2. Disk file check if exists
         file_path = dms_adapter.get_file_path(doc.dms_ref)
-        if not file_path or not file_path.exists():
-            # Attempt to pull original from IKM if local disk file is missing
-            if doc.ikm_ref and not doc.ikm_ref.startswith("local-") and not doc.ikm_ref.startswith("ikm-"):
-                downloaded = ikm_adapter.download_document(doc.ikm_ref)
-                if downloaded:
-                    try:
-                        ext = doc.original_filename.rsplit(".", 1)[-1].lower() if "." in doc.original_filename else "docx"
-                        target_path = dms_adapter.originals_dir / f"{doc.doc_id}.{ext}"
-                        with open(target_path, "wb") as f:
-                            f.write(downloaded)
-                        file_path = target_path
-                    except Exception:
-                        pass
+        if file_path and file_path.exists():
+            return self._render_file_to_preview(
+                doc_id=doc_id,
+                filename=doc.original_filename,
+                cand_name=cand_name,
+                file_path=file_path,
+                mime_type=doc.mime_type
+            )
 
-        if not file_path or not file_path.exists():
-            raise HTTPException(status_code=404, detail=f"File for document '{doc_id}' not found in IKM or storage.")
+        # 3. Candidate profile fallback for seeded/in-memory records
+        from app.models.entities import CandidateProfile
+        prof_rec = db.query(CandidateProfile).filter(CandidateProfile.doc_id == doc_id).first()
+        if prof_rec:
+            summary = prof_rec.raw_text_summary or ""
+            skills = ", ".join(prof_rec.structured_profile_json.get("skills", [])) if prof_rec.structured_profile_json else ""
+            text = f"{cand_name}\n\n{summary}\n\nSkills: {skills}"
+            pages = self._text_to_pages(text, cand_name)
+            return {
+                "success": True,
+                "doc_id": doc_id,
+                "version_id": None,
+                "filename": doc.original_filename,
+                "full_name": cand_name,
+                "mime_type": doc.mime_type or "text/plain",
+                "total_pages": max(1, len(pages)),
+                "pages": pages,
+                "is_pdf": False,
+                "is_docx": False,
+                "stream_url": f"/api/resumes/{doc_id}/stream",
+                "docx_stream_url": None
+            }
 
-        rendered = self._render_file_to_preview(
-            doc_id=doc_id,
-            filename=doc.original_filename,
-            cand_name=cand_name,
-            file_path=file_path,
-            mime_type=doc.mime_type
-        )
-        try:
-            stat = file_path.stat()
-            self._preview_cache[cache_key] = (stat.st_mtime, stat.st_size, rendered)
-        except Exception:
-            self._preview_cache[cache_key] = (0.0, 0, rendered)
-        return rendered
+        raise HTTPException(status_code=404, detail=f"File for document '{doc_id}' not found in IKM storage.")
 
     def get_version_preview(self, version_id: str, db: Session) -> Dict[str, Any]:
         ver = db.query(ResumeVersion).filter(ResumeVersion.version_id == version_id).first()
         if not ver:
             raise HTTPException(status_code=404, detail=f"Version '{version_id}' not found.")
 
-        file_path = dms_adapter.get_file_path(ver.dms_ref)
         doc = db.query(Document).filter(Document.doc_id == ver.doc_id).first()
         filename = f"{doc.original_filename.rsplit('.', 1)[0]}_v{version_id.split('-v')[-1]}.docx" if doc else f"{version_id}.docx"
         cand_name = self.resolve_candidate_full_name(ver.doc_id, filename, db)
 
-        cache_key = f"ver_{version_id}"
-        if file_path and file_path.exists():
+        # 1. Primary: Download directly from IKM storage
+        from app.integrations.ikm_adapter import ikm_adapter
+        ver_bytes = None
+        if hasattr(ikm_adapter, "_download_cache"):
+            if version_id in ikm_adapter._download_cache:
+                ver_bytes = ikm_adapter._download_cache[version_id]
+            elif ver.dms_ref and ver.dms_ref in ikm_adapter._download_cache:
+                ver_bytes = ikm_adapter._download_cache[ver.dms_ref]
+
+        if not ver_bytes and ver.dms_ref:
+            if ver.dms_ref.startswith("ikm://"):
+                ver_bytes = ikm_adapter.download_document(ver.dms_ref[6:])
+            else:
+                ver_bytes = ikm_adapter.download_document(ver.dms_ref)
+        if not ver_bytes:
+            found = ikm_adapter.find_document_by_name(f"{doc.original_filename.rsplit('.', 1)[0]}_{version_id}.docx" if doc else f"{version_id}.docx")
+            if found and found.get("document_id"):
+                ver_bytes = ikm_adapter.download_document(found["document_id"])
+
+        if ver_bytes:
+            pages = []
             try:
-                stat = file_path.stat()
-                cached = self._preview_cache.get(cache_key)
-                if cached and cached[0] == stat.st_mtime and cached[1] == stat.st_size:
-                    return cached[2]
+                pages = self._docx_to_pages(ver_bytes, cand_name)
             except Exception:
-                stat = None
-        if not file_path or not file_path.exists():
-            # If revised_content string exists
-            content = ver.revised_content or "No preview content available."
-            pages = self._text_to_pages(content, cand_name)
+                text = ikm_adapter.extract_raw_text(ver_bytes)
+                pages = self._text_to_pages(text, cand_name)
+            pages = self._unmask_preview_pages(pages, ver.doc_id, db)
             return {
                 "success": True,
                 "doc_id": ver.doc_id,
                 "version_id": version_id,
                 "filename": filename,
                 "full_name": cand_name,
-                "mime_type": "text/html",
-                "total_pages": len(pages),
+                "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "total_pages": max(1, len(pages)),
                 "pages": pages,
                 "is_pdf": False,
-                "pdf_stream_url": None
+                "is_docx": True,
+                "stream_url": f"/api/versions/{version_id}/file",
+                "docx_stream_url": f"/api/versions/{version_id}/file"
             }
 
-        rendered = self._render_file_to_preview(
-            doc_id=ver.doc_id,
-            filename=filename,
-            cand_name=cand_name,
-            file_path=file_path,
-            mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            version_id=version_id
-        )
-        if stat is not None:
-            self._preview_cache[cache_key] = (stat.st_mtime, stat.st_size, rendered)
-        return rendered
+        file_path = dms_adapter.get_file_path(ver.dms_ref)
+        if file_path and file_path.exists() and file_path.stat().st_size > 0:
+            pages = []
+            try:
+                pages = self._docx_to_pages(file_path, cand_name)
+            except Exception:
+                pass
+            return {
+                "success": True,
+                "doc_id": ver.doc_id,
+                "version_id": version_id,
+                "filename": filename,
+                "full_name": cand_name,
+                "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "total_pages": max(1, len(pages)),
+                "pages": pages,
+                "is_pdf": False,
+                "is_docx": True,
+                "stream_url": f"/api/versions/{version_id}/file",
+                "docx_stream_url": f"/api/versions/{version_id}/file"
+            }
+
+        content = ver.revised_content or "No preview content available."
+        pages = self._text_to_pages(content, cand_name)
+        return {
+            "success": True,
+            "doc_id": ver.doc_id,
+            "version_id": version_id,
+            "filename": filename,
+            "full_name": cand_name,
+            "mime_type": "text/html",
+            "total_pages": len(pages),
+            "pages": pages,
+            "is_pdf": False,
+            "is_docx": False,
+            "stream_url": None,
+            "docx_stream_url": None
+        }
 
     def _render_file_to_preview(
         self,
@@ -195,16 +334,21 @@ class ResumePreviewService:
         # 2. Try PDF rendering
         elif suffix == ".pdf":
             try:
-                import pypdf
                 with open(file_path, "rb") as f:
-                    reader = pypdf.PdfReader(f)
-                    if len(reader.pages) > 0:
-                        is_real_pdf = True
-                        for idx, p in enumerate(reader.pages):
-                            p_text = p.extract_text() or ""
-                            pages.append(self._format_pdf_page_html(p_text, idx + 1, cand_name))
+                    magic = f.read(5)
+                    if magic.startswith(b"%PDF"):
+                        f.seek(0)
+                        import pypdf
+                        reader = pypdf.PdfReader(f)
+                        if len(reader.pages) > 0:
+                            is_real_pdf = True
+                            for idx, p in enumerate(reader.pages):
+                                p_text = p.extract_text() or ""
+                                pages.append(self._format_pdf_page_html(p_text, idx + 1, cand_name))
+                    else:
+                        raise ValueError("Not a binary PDF")
             except Exception:
-                # If mock pdf or text-based
+                is_real_pdf = False
                 text = self._read_file_text_fallback(file_path)
                 pages = self._text_to_pages(text, cand_name)
 
@@ -233,21 +377,22 @@ class ResumePreviewService:
             "pdf_stream_url": stream_url
         }
 
-    def _docx_to_pages(self, file_path: Path, cand_name: str) -> List[str]:
+    def _docx_to_pages(self, file_source: Any, cand_name: str) -> List[str]:
+        import io
         import docx
-        doc = docx.Document(str(file_path))
+        from docx.text.paragraph import Paragraph
+        from docx.table import Table
+
+        if isinstance(file_source, (bytes, bytearray)):
+            doc = docx.Document(io.BytesIO(bytes(file_source)))
+        elif isinstance(file_source, io.BytesIO):
+            doc = docx.Document(file_source)
+        else:
+            doc = docx.Document(str(file_source))
         pages: List[str] = []
         current_page_items: List[str] = []
-
-        # Header banner on page 1
-        current_page_items.append(
-            f"<div class='doc-header-banner'>"
-            f"<div class='doc-cand-name'>{html.escape(cand_name)}</div>"
-            f"</div>"
-        )
-
         item_count = 0
-        MAX_ITEMS_PER_PAGE = 26
+        MAX_ITEMS_PER_PAGE = 28
 
         def flush_page():
             nonlocal current_page_items, item_count
@@ -256,58 +401,66 @@ class ResumePreviewService:
                 current_page_items = []
                 item_count = 0
 
-        for p in doc.paragraphs:
-            text = p.text.strip()
-            
-            # Check for explicit page break in runs
-            has_page_break = False
-            for r in p.runs:
-                if "\f" in r.text or "lastRenderedPageBreak" in r._element.xml or 'w:type="page"' in r._element.xml:
-                    has_page_break = True
-                    break
+        # Iterate in natural document body order (paragraphs and tables in place)
+        for child in doc.element.body:
+            tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+            if tag == "p":
+                p = Paragraph(child, doc)
+                text = p.text.strip()
+                if not text:
+                    continue
 
-            if has_page_break and item_count > 0:
-                flush_page()
+                # Check for explicit page break in runs
+                has_page_break = False
+                for r in p.runs:
+                    if "\f" in r.text or "lastRenderedPageBreak" in r._element.xml or 'w:type="page"' in r._element.xml:
+                        has_page_break = True
+                        break
 
-            if not text:
-                continue
-
-            # Detect headings
-            upper = text.upper()
-            is_heading = (
-                p.style.name.startswith("Heading") or
-                upper in ["SUMMARY", "PROFESSIONAL SUMMARY", "TECHNICAL SKILLS", "EXPERIENCE", "WORK EXPERIENCE", "PROJECTS", "EDUCATION", "CERTIFICATIONS"]
-            )
-
-            p_html = self._format_paragraph_runs(p)
-
-            if is_heading:
-                if item_count >= (MAX_ITEMS_PER_PAGE - 6) and item_count > 0:
+                if has_page_break and item_count > 0:
                     flush_page()
-                current_page_items.append(f"<h3 class='doc-sec-heading'>{p_html}</h3>")
-                item_count += 2
-            else:
-                # Check for bullet point
-                if p.style.name.startswith("List") or text.startswith(("•", "-", "*")):
+
+                align_class = "doc-align-left"
+                if p.alignment == docx.enum.text.WD_ALIGN_PARAGRAPH.CENTER:
+                    align_class = "doc-align-center"
+                elif p.alignment == docx.enum.text.WD_ALIGN_PARAGRAPH.RIGHT:
+                    align_class = "doc-align-right"
+                elif p.alignment == docx.enum.text.WD_ALIGN_PARAGRAPH.JUSTIFY:
+                    align_class = "doc-align-justify"
+
+                p_html = self._format_paragraph_runs(p)
+                upper = text.upper()
+                is_heading = (
+                    p.style.name.startswith("Heading") or
+                    (len(text) < 50 and upper in ["SUMMARY", "PROFESSIONAL SUMMARY", "TECHNICAL SKILLS", "EXPERIENCE", "WORK EXPERIENCE", "PROJECTS", "EDUCATION", "CERTIFICATIONS"])
+                )
+
+                if is_heading:
+                    if item_count >= (MAX_ITEMS_PER_PAGE - 5) and item_count > 0:
+                        flush_page()
+                    current_page_items.append(f"<h3 class='doc-sec-heading {align_class}'>{p_html}</h3>")
+                    item_count += 2
+                elif p.style.name.startswith("List") or text.startswith(("•", "-", "*")):
                     clean_text = re.sub(r'^[•\-\*]\s*', '', p_html)
-                    current_page_items.append(f"<div class='doc-bullet-item'>&bull; {clean_text}</div>")
+                    current_page_items.append(f"<div class='doc-bullet-item {align_class}'>&bull; {clean_text}</div>")
+                    item_count += 1
                 else:
-                    current_page_items.append(f"<p class='doc-para'>{p_html}</p>")
-                item_count += 1
+                    current_page_items.append(f"<p class='doc-para {align_class}'>{p_html}</p>")
+                    item_count += 1
 
-            if item_count >= MAX_ITEMS_PER_PAGE:
-                flush_page()
+                if item_count >= MAX_ITEMS_PER_PAGE:
+                    flush_page()
 
-        # Render tables
-        for table in doc.tables:
-            table_rows_html = []
-            for row in table.rows:
-                cells_html = [f"<td>{html.escape(c.text.strip())}</td>" for c in row.cells]
-                table_rows_html.append(f"<tr>{''.join(cells_html)}</tr>")
-            current_page_items.append(f"<table class='doc-table'>{''.join(table_rows_html)}</table>")
-            item_count += len(table.rows)
-            if item_count >= MAX_ITEMS_PER_PAGE:
-                flush_page()
+            elif tag == "tbl":
+                table = Table(child, doc)
+                table_rows_html = []
+                for row in table.rows:
+                    cells_html = [f"<td>{html.escape(c.text.strip())}</td>" for c in row.cells]
+                    table_rows_html.append(f"<tr>{''.join(cells_html)}</tr>")
+                current_page_items.append(f"<table class='doc-table'>{''.join(table_rows_html)}</table>")
+                item_count += max(1, len(table.rows))
+                if item_count >= MAX_ITEMS_PER_PAGE:
+                    flush_page()
 
         flush_page()
         return pages if pages else [f"<p class='doc-para'>{html.escape(cand_name)}</p>"]
@@ -333,13 +486,6 @@ class ResumePreviewService:
     def _format_pdf_page_html(self, text: str, page_num: int, cand_name: str) -> str:
         lines = [line.strip() for line in text.split("\n") if line.strip()]
         html_lines = []
-        
-        if page_num == 1:
-            html_lines.append(
-                f"<div class='doc-header-banner'>"
-                f"<div class='doc-cand-name'>{html.escape(cand_name)}</div>"
-                f"</div>"
-            )
 
         for line in lines:
             if any(h in line.upper() for h in ["SUMMARY", "SKILLS", "EXPERIENCE", "PROJECTS", "EDUCATION"]):

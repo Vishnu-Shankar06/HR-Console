@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
 
-from app.config import settings, STORAGE_DIR
+from app.config import settings
 from app.models.entities import Document, CandidatePII, CandidateProfile, Notification, AuditEvent, RecruitmentAction
 from app.integrations.dms_adapter import dms_adapter
 from app.security.encryption import pii_crypto
@@ -24,8 +24,6 @@ class EmailAgentService:
     """
 
     def __init__(self):
-        self.emails_dir = STORAGE_DIR / "emails"
-        self.emails_dir.mkdir(parents=True, exist_ok=True)
         self.default_recipient = "damayanthi.u@riscrm.com"
 
     def _get_smtp_settings(self) -> Dict[str, Any]:
@@ -84,18 +82,8 @@ class EmailAgentService:
             try:
                 from app.integrations.ikm_adapter import ikm_adapter
                 file_data = ikm_adapter.download_document(doc.ikm_ref)
-                if file_data and file_path:
-                    try:
-                        file_path.parent.mkdir(parents=True, exist_ok=True)
-                        with open(file_path, "wb") as f:
-                            f.write(file_data)
-                    except Exception:
-                        pass
             except Exception:
                 file_data = None
-
-        if not file_data:
-            raise HTTPException(status_code=404, detail=f"Original resume file for '{doc_id}' not found in DMS or IKM.")
 
         # 2. Fetch candidate identity (authorized decryption for escalation payload)
         pii_rec = db.query(CandidatePII).filter(CandidatePII.doc_id == doc_id).first()
@@ -109,6 +97,25 @@ class EmailAgentService:
             cand_name = decrypted.get("name") or cand_name
             cand_email = decrypted.get("email") or cand_email
 
+        if not file_data:
+            prof = db.query(CandidateProfile).filter(CandidateProfile.doc_id == doc_id).first()
+            if prof:
+                from app.services.word_resume_service import word_resume_service
+                summary = prof.raw_text_summary or ""
+                skills = prof.structured_profile_json.get("skills", []) if prof.structured_profile_json else []
+                text = f"Candidate Profile\n\nSummary:\n{summary}\n\nTechnical Skills:\n{', '.join(skills)}"
+                file_data = word_resume_service.generate_improved_docx_bytes(
+                    candidate_name=cand_name,
+                    target_role="Professional",
+                    profile=prof.structured_profile_json or {},
+                    revised_content=text
+                )
+                if not doc.original_filename.endswith(".docx"):
+                    doc.original_filename = f"{doc.original_filename.rsplit('.', 1)[0]}.docx"
+
+        if not file_data:
+            raise HTTPException(status_code=404, detail=f"Original resume file for '{doc_id}' not found in DMS or IKM.")
+
         # 3. Calculate inactivity metrics
         latest_action = (
             db.query(RecruitmentAction)
@@ -116,6 +123,14 @@ class EmailAgentService:
             .order_by(RecruitmentAction.action_at.desc())
             .first()
         )
+        status_val = (latest_action.status if latest_action else "pending_review").lower()
+        if status_val == "hired":
+            return {
+                "success": False,
+                "status": "skipped",
+                "message": f"Candidate '{doc_id}' is marked as hired. Excluded from dormancy follow-up emails."
+            }
+
         now = datetime.now(timezone.utc)
         last_time = latest_action.action_at if latest_action else doc.uploaded_at
         if last_time.tzinfo is None:
@@ -181,11 +196,8 @@ Workflow & Inactivity Intelligence
         )
         msg.attach(attachment_mime)
 
-        # 6. Save email artifact (.eml) locally
+        # 6. Generate email reference ID
         email_id = f"EMAIL-{uuid.uuid4().hex[:8]}"
-        eml_path = self.emails_dir / f"{email_id}.eml"
-        with open(eml_path, "wb") as f:
-            f.write(msg.as_bytes())
 
         # 7. Live SMTP Delivery
         delivered_via_smtp = False
@@ -230,7 +242,7 @@ Workflow & Inactivity Intelligence
                 )
         else:
             smtp_note = (
-                f"Simulated dispatch: Email saved locally to storage/emails/{email_id}.eml. "
+                f"Simulated dispatch: Notification logged in memory ({email_id}). "
                 "Configure SMTP in .env to deliver real emails to inboxes."
             )
 
@@ -293,7 +305,7 @@ Workflow & Inactivity Intelligence
             "message": (
                 f"Successfully sent live email to {target_email} with resume '{doc.original_filename}' attached."
                 if delivered_via_smtp
-                else f"Escalation email archived to storage/emails/{email_id}.eml. To send live emails, configure SMTP in .env."
+                else f"Escalation notification recorded ({email_id}). To send live emails, configure SMTP in .env."
             )
         }
 
